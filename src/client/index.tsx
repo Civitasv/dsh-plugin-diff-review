@@ -77,12 +77,18 @@ interface PendingComments {
   diffs: Record<string, string>
   /** Last AI review result (verdict + findings), appended to the carried message. */
   review: ReviewResponse | null
+  /** Comment ids already carried with a previous message (not re-sent). */
+  sentCommentIds: string[]
+  /** Review key already carried (not re-sent until a new review runs). */
+  sentReviewKey: string | null
 }
 const pendingCommentsStore = createSnapshotStore<PendingComments>({
   cwd: null,
   comments: [],
   diffs: {},
   review: null,
+  sentCommentIds: [],
+  sentReviewKey: null,
 })
 
 /** Inject text into a session as a user message; falls back to the clipboard. */
@@ -921,6 +927,7 @@ const zh = {
   'editor.failed': '打开失败',
   'repo.label': '仓库',
   'review.dockComments': '行内评论 {n} 条',
+  'review.dockVerdict': '评审结论待发送',
   'review.dockJump': '点击在评审面板中打开对应变更',
   'review.dockHint': '随下一条消息自动附带（含 diff 与 AI 评审结论）',
   'settings.title': '变动',
@@ -1047,6 +1054,7 @@ const en: Record<keyof typeof zh, string> = {
   'editor.failed': 'Failed to open',
   'repo.label': 'Repo',
   'review.dockComments': '{n} inline comments',
+  'review.dockVerdict': 'verdict pending',
   'review.dockJump': 'Open the matching change in the review panel',
   'review.dockHint': 'Auto-carried with your next message (diff + AI verdict included)',
   'settings.title': 'Changes',
@@ -1936,19 +1944,26 @@ function DiffReviewComposerDock({ sessionId, useSessions, sessions, input, t }: 
   }, [cwd, pending.cwd])
 
   const comments = pending.cwd === cwd ? pending.comments : []
-  const ids = comments.map((c) => c.id).join(',')
+  const sentSet = new Set(pending.sentCommentIds)
+  const unsentComments = comments.filter((c) => !sentSet.has(c.id))
+  const reviewKey =
+    pending.review?.ok && (pending.review.findings.length > 0 || pending.review.verdict)
+      ? `${pending.review.verdict ?? ''}:${pending.review.findings.length}:${pending.review.findings[0]?.title ?? ''}`
+      : null
+  const reviewPending = reviewKey !== null && reviewKey !== pending.sentReviewKey
+  const hasPending = unsentComments.length > 0 || reviewPending
+
   useEffect(() => {
-    if (comments.length === 0) {
+    if (!hasPending) {
       setDismissed(false)
-      carriedIds.current = null
     }
-  }, [comments.length])
+  }, [hasPending])
 
   /** Compose the full review package: comments + their diff hunks + AI verdict. */
   const composeCarriedMessage = (): string => {
     const lines: string[] = ['请处理以下针对当前工作区的行内评审评论（Address the inline comments，保持改动范围最小）：', '']
     const byPath = new Map<string, ReviewComment[]>()
-    for (const c of comments) {
+    for (const c of unsentComments) {
       const list = byPath.get(c.path)
       if (list) list.push(c)
       else byPath.set(c.path, [c])
@@ -1967,7 +1982,7 @@ function DiffReviewComposerDock({ sessionId, useSessions, sessions, input, t }: 
       }
       lines.push('')
     }
-    if (pending.review?.ok && (pending.review.findings.length > 0 || pending.review.verdict)) {
+    if (reviewPending && pending.review) {
       lines.push('## AI 评审结论')
       lines.push(pending.review.verdict === 'incorrect' ? '补丁存在问题（Patch is incorrect）' : '补丁正确（Patch is correct）')
       for (const f of pending.review.findings) {
@@ -1980,20 +1995,28 @@ function DiffReviewComposerDock({ sessionId, useSessions, sessions, input, t }: 
 
   // Codex-style auto-carry: when the user submits a message while comments are
   // pending, queue the full review package right behind it (no send button).
+  /** Mark the carried items as sent so they are never re-sent. */
+  const markSent = () => {
+    const carriedIds = unsentComments.map((c) => c.id)
+    pendingCommentsStore.update((d) => {
+      d.sentCommentIds = [...new Set([...d.sentCommentIds, ...carriedIds])]
+      if (reviewPending) d.sentReviewKey = reviewKey
+    })
+  }
+
   const phase = input?.phase
   useEffect(() => {
-    if (comments.length === 0 || carrying.current || carriedIds.current === ids) return
+    if (!hasPending || carrying.current) return
     if (phase !== 'submitting' && phase !== 'adjudicating') return
     carrying.current = true
-    const targetIds = ids
     void injectToSession(sessions, sessionId, composeCarriedMessage()).then((outcome) => {
-      if (outcome !== 'failed') carriedIds.current = targetIds
+      if (outcome !== 'failed') markSent()
       carrying.current = false
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, ids])
+  }, [phase, hasPending])
 
-  if (!cwd || comments.length === 0 || dismissed) return null
+  if (!cwd || !hasPending || dismissed) return null
 
   /** Open the review panel at the comment's change block. */
   const focusComment = (comment: ReviewComment) => {
@@ -2009,7 +2032,10 @@ function DiffReviewComposerDock({ sessionId, useSessions, sessions, input, t }: 
     <div className="dsdr-dock" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <div className="dsdr-dock-head">
         <span className="dsdr-dock-icon"><IconComment /></span>
-        <span className="dsdr-dock-count" title={t('review.dockHint')}>{t('review.dockComments', { n: comments.length })}</span>
+        <span className="dsdr-dock-count" title={t('review.dockHint')}>
+          {t('review.dockComments', { n: unsentComments.length })}
+          {reviewPending ? ` · ${t('review.dockVerdict')}` : ''}
+        </span>
         <span className="dsdr-spacer" />
         <button type="button" className="dsdr-dock-close" aria-label={t('comment.cancel')} onClick={() => setDismissed(true)}>
           <IconX />
@@ -2017,7 +2043,7 @@ function DiffReviewComposerDock({ sessionId, useSessions, sessions, input, t }: 
       </div>
       {hover ? (
         <div className="dsdr-dock-list">
-          {comments.map((comment) => (
+          {unsentComments.map((comment) => (
             <button
               key={comment.id}
               type="button"
