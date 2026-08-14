@@ -636,8 +636,8 @@ const REVIEW_CSS = `
 .dsdr-comment-add{flex:none;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:6px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:11px;line-height:1;padding:0;margin-top:1px;visibility:hidden}
 .dsdr-line:hover .dsdr-comment-add,.dsdr-comment-add:focus-visible{visibility:visible}
 .dsdr-comment-add:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-label-dimmed)}
-.dsdr-comment-has{visibility:visible;background:rgba(88,166,255,.18);color:#58a6ff;border-color:transparent;font-variant-numeric:tabular-nums}
-.dsdr-line-commented{box-shadow:inset 3px 0 0 rgba(88,166,255,.7)}
+.dsdr-comment-has{visibility:visible;background:color-mix(in srgb, var(--dsw-alias-button-info-fill) 16%, transparent);color:var(--dsw-alias-button-info-fill);border-color:transparent;font-variant-numeric:tabular-nums}
+.dsdr-line-commented{box-shadow:inset 3px 0 0 color-mix(in srgb, var(--dsw-alias-button-info-fill) 70%, transparent)}
 .dsdr-comment-editor{display:flex;flex-direction:column;gap:6px;padding:8px 16px;border-top:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2)}
 .dsdr-comment-input{box-sizing:border-box;width:100%;min-height:52px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);padding:6px 8px;font:inherit;font-size:12px;line-height:18px;resize:vertical}
 .dsdr-comment-input:focus{outline:none;border-color:var(--dsw-alias-brand-primary)}
@@ -681,15 +681,18 @@ const REVIEW_CSS = `
 .dsdr-pr-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-pr-meta{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
 .dsdr-pr-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere}
-.dsdr-dock{display:flex;align-items:center;gap:8px;padding:6px 16px;font-size:12px;line-height:18px;flex-wrap:wrap}
-.dsdr-dock-pill{position:relative;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:rgba(88,166,255,.12);color:var(--dsw-alias-label-secondary);padding:2px 12px;font:inherit;font-size:12px;line-height:18px;cursor:default;user-select:none}
-.dsdr-dock-pop{position:absolute;z-index:40;left:0;top:calc(100% + 6px);min-width:320px;max-width:min(520px,90vw);max-height:280px;overflow-y:auto;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-specific-menu);border-radius:10px;box-shadow:var(--dsw-shadow-lv3);padding:8px;display:flex;flex-direction:column;gap:6px}
-.dsdr-dock-item{display:flex;flex-direction:column;gap:2px;border-bottom:1px solid var(--dsw-alias-border-l1);padding-bottom:6px}
-.dsdr-dock-item:last-child{border-bottom:0;padding-bottom:0}
+.dsdr-dock{display:flex;flex-direction:column;gap:4px;margin:8px 12px 0;padding:8px 12px;background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;box-shadow:var(--dsw-shadow-lv3);font-size:12px;line-height:18px}
+.dsdr-dock-head{display:flex;align-items:center;gap:8px;min-height:24px}
+.dsdr-dock-icon{display:inline-flex;color:var(--dsw-alias-button-info-fill)}
+.dsdr-dock-count{font-weight:600;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary)}
+.dsdr-dock-hint{color:var(--dsw-alias-label-tertiary);font-size:11px}
+.dsdr-dock-close{flex:none;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:0}
+.dsdr-dock-close:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsdr-dock-list{display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--dsw-alias-border-l1);padding-top:4px;margin-top:2px;max-height:248px;overflow-y:auto}
+.dsdr-dock-item{display:flex;flex-direction:column;gap:2px;text-align:left;border:0;background:transparent;border-radius:7px;padding:5px 8px;cursor:pointer;font:inherit}
+.dsdr-dock-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-dock-loc{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
-.dsdr-dock-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere}
-.dsdr-dock-send{min-height:24px}
-.dsdr-dock-close{min-height:24px;padding:0 6px}
+.dsdr-dock-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);white-space:pre-wrap;overflow-wrap:anywhere}
 .dsdr-send{position:absolute;z-index:40;top:52px;right:16px;width:min(480px,calc(100% - 32px));border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-specific-menu);border-radius:12px;box-shadow:var(--dsw-shadow-lv3);padding:12px;display:flex;flex-direction:column;gap:8px}
 .dsdr-send-title{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}
 .dsdr-send-hint{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}
@@ -872,6 +875,7 @@ const zh = {
   'repo.label': '仓库',
   'review.dockComments': '行内评论 {n} 条',
   'review.dockJump': '点击在评审面板中打开对应变更',
+  'review.dockHint': '发送消息时自动附带',
   'settings.title': '变动',
   'settings.font': '字体',
   'settings.size': '字号',
@@ -995,6 +999,7 @@ const en: Record<keyof typeof zh, string> = {
   'repo.label': 'Repo',
   'review.dockComments': '{n} inline comments',
   'review.dockJump': 'Open the matching change in the review panel',
+  'review.dockHint': 'Auto-carried with your next message',
   'settings.title': 'Changes',
   'settings.font': 'Font',
   'settings.size': 'Font size',
@@ -1023,6 +1028,14 @@ function IconX() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M18 6 6 18" />
       <path d="m6 6 12 12" />
+    </svg>
+  )
+}
+
+function IconComment() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   )
 }
@@ -1829,29 +1842,32 @@ function DiffReviewComposerDock({ sessionId, useSessions, sessions, input, t }: 
   }
 
   return (
-    <div className="dsdr-dock">
-      <div className="dsdr-dock-pill" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-        💬 {t('review.dockComments', { n: comments.length })}
-        {hover ? (
-          <div className="dsdr-dock-pop">
-            {comments.map((comment) => (
-              <button
-                key={comment.id}
-                type="button"
-                className="dsdr-dock-item"
-                title={t('review.dockJump')}
-                onClick={() => focusComment(comment)}
-              >
-                <span className="dsdr-dock-loc">{comment.path}{comment.lineNew !== null ? `:${comment.lineNew}` : ''}</span>
-                <span className="dsdr-dock-text">{comment.text}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
+    <div className="dsdr-dock" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <div className="dsdr-dock-head">
+        <span className="dsdr-dock-icon"><IconComment /></span>
+        <span className="dsdr-dock-count">{t('review.dockComments', { n: comments.length })}</span>
+        <span className="dsdr-dock-hint">{t('review.dockHint')}</span>
+        <span className="dsdr-spacer" />
+        <button type="button" className="dsdr-dock-close" aria-label={t('comment.cancel')} onClick={() => setDismissed(true)}>
+          <IconX />
+        </button>
       </div>
-      <button type="button" className="dsdr-btn dsdr-dock-close" aria-label={t('comment.cancel')} onClick={() => setDismissed(true)}>
-        ✕
-      </button>
+      {hover ? (
+        <div className="dsdr-dock-list">
+          {comments.map((comment) => (
+            <button
+              key={comment.id}
+              type="button"
+              className="dsdr-dock-item"
+              title={t('review.dockJump')}
+              onClick={() => focusComment(comment)}
+            >
+              <span className="dsdr-dock-loc">{comment.path}{comment.lineNew !== null ? `:${comment.lineNew}` : ''}</span>
+              <span className="dsdr-dock-text">{comment.text}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }
