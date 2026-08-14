@@ -30,6 +30,7 @@ import type { ToolResultView } from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { ApplyResponse, CommitDiffResponse, CommitInfo, DiffFile, GitResponse, HistoryResponse, StatusResponse } from '../shared/types.ts'
 
@@ -45,6 +46,7 @@ const COMMIT_URL = 'diff-review/commit'
 const PUSH_URL = 'diff-review/push'
 const HISTORY_URL = 'diff-review/history'
 const COMMIT_DIFF_URL = 'diff-review/commit-diff'
+const CONFIG_URL = 'diff-review/config'
 const STYLE_TAG = 'dsh-plugin-diff-review/review.css'
 
 /** Open state shared between the header trigger (session scope) and the overlay (root scope). */
@@ -521,6 +523,21 @@ const REVIEW_CSS = `
 .dsdr-diff-hash{margin-left:8px;font-size:11px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
 .dsdr-commit-file-head{display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
 .dsdr-commit-file-path{font-family:var(--dsw-font-mono);font-size:12px;color:var(--dsw-alias-label-primary);margin-left:4px}
+.dsdr-cfg-card{border:1px solid var(--dsw-alias-border-l2);border-radius:12px;list-style:none;margin-bottom:10px;overflow:hidden}
+.dsdr-cfg-head{align-items:center;background:transparent;border:0;color:var(--dsw-alias-label-primary);cursor:pointer;display:flex;font:inherit;gap:8px;padding:10px 12px;text-align:left;width:100%}
+.dsdr-cfg-head:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsdr-cfg-name{font-size:13px;font-weight:600}
+.dsdr-cfg-desc{color:var(--dsw-alias-label-tertiary);flex:1;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsdr-cfg-pending{background:rgba(46,160,67,.16);border-radius:999px;color:var(--dsw-alias-state-success-primary);flex:none;font-size:11px;padding:1px 8px}
+.dsdr-cfg-caret{color:var(--dsw-alias-label-tertiary);flex:none;font-size:10px}
+.dsdr-cfg-body{display:flex;flex-direction:column;gap:12px;padding:4px 12px 12px}
+.dsdr-cfg-field{display:flex;flex-direction:column;gap:4px}
+.dsdr-cfg-label{color:var(--dsw-alias-label-secondary);font-size:12px}
+.dsdr-cfg-textarea{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:7px;color:var(--dsw-alias-label-primary);font:inherit;font-family:var(--dsw-font-mono);font-size:12px;line-height:1.6;min-height:72px;padding:6px 8px;resize:vertical}
+.dsdr-cfg-textarea:focus{outline:none;border-color:var(--dsw-alias-brand-primary)}
+.dsdr-cfg-hint{color:var(--dsw-alias-label-caption);font-size:11px}
+.dsdr-cfg-failed{color:var(--dsw-alias-state-error-primary);font-size:12px;margin:0}
+.dsdr-cfg-actions{display:flex;gap:8px;justify-content:flex-end}
 .dsdr-body{display:flex;flex:1;min-height:0}
 .dsdr-files{width:300px;flex:none;border-right:1px solid var(--dsw-alias-border-l1);overflow-y:auto;padding:8px}
 .dsdr-round{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);padding:8px 8px 3px;font-weight:600}
@@ -666,6 +683,13 @@ const zh = {
   'settings.title': '变动',
   'settings.font': '字体',
   'settings.size': '字号',
+  'config.title': '配置',
+  'config.allowedRoots': '允许的目录',
+  'config.allowedRootsHint': '每行一个绝对路径；只允许审查这些目录下的仓库（留空 = 不限制）',
+  'config.save': '保存',
+  'config.discard': '恢复默认',
+  'config.unsaved': '未保存',
+  'config.saveFailed': '保存失败',
   'font.mono': '等宽（默认）',
   'font.system': '系统字体',
 } as const
@@ -732,6 +756,13 @@ const en: Record<keyof typeof zh, string> = {
   'settings.title': 'Changes',
   'settings.font': 'Font',
   'settings.size': 'Font size',
+  'config.title': 'Configuration',
+  'config.allowedRoots': 'Allowed roots',
+  'config.allowedRootsHint': 'One absolute path per line; only repos under these directories may be reviewed (empty = unrestricted)',
+  'config.save': 'Save',
+  'config.discard': 'Reset',
+  'config.unsaved': 'Unsaved',
+  'config.saveFailed': 'Save failed',
   'font.mono': 'Monospace (default)',
   'font.system': 'System font',
 }
@@ -1870,6 +1901,88 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   )
 }
 
+/** Config card for the Plugins configuration tab (Settings → Plugins → 可配置). */
+function DiffReviewConfigCard({ t }: { t: (key: keyof typeof zh, params?: Record<string, unknown>) => string }) {
+  const [open, setOpen] = useState(false)
+  const [roots, setRoots] = useState<string[] | null>(null)
+  const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  const load = async () => {
+    try {
+      const res = await fetch(CONFIG_URL, { headers: { accept: 'application/json' } })
+      const result = (await res.json()) as { ok: boolean; allowedRoots?: string[] }
+      if (result.ok && result.allowedRoots) {
+        setRoots(result.allowedRoots)
+        setDraft(result.allowedRoots.join('\n'))
+      }
+    } catch {
+      // keep last known state
+    }
+  }
+
+  useEffect(() => {
+    if (open) void load()
+  }, [open])
+
+  const dirty = roots !== null && draft !== roots.join('\n')
+
+  const save = async (clear: boolean) => {
+    setSaving(true)
+    setFailed(false)
+    try {
+      const res = await fetch(CONFIG_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ config: { allowedRoots: clear ? [] : draft.split('\n').map((l) => l.trim()).filter(Boolean) } }),
+      })
+      const result = (await res.json().catch(() => ({ ok: false }))) as { ok: boolean }
+      if (!result.ok) setFailed(true)
+      await load()
+    } catch {
+      setFailed(true)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <li className="dsdr-cfg-card">
+      <button type="button" className="dsdr-cfg-head" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <span className="dsdr-cfg-name">{t('settings.title')}</span>
+        <span className="dsdr-cfg-desc">{t('config.title')}</span>
+        {dirty ? <span className="dsdr-cfg-pending">{t('config.unsaved')}</span> : null}
+        <span className="dsdr-cfg-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
+      </button>
+      {open ? (
+        <div className="dsdr-cfg-body">
+          <label className="dsdr-cfg-field">
+            <span className="dsdr-cfg-label">{t('config.allowedRoots')}</span>
+            <textarea
+              className="dsdr-cfg-textarea"
+              rows={4}
+              value={draft}
+              placeholder="/Users/me/projects/a&#10;/Users/me/projects/b"
+              onChange={(e) => setDraft(e.target.value)}
+            />
+            <span className="dsdr-cfg-hint">{t('config.allowedRootsHint')}</span>
+          </label>
+          {failed ? <p className="dsdr-cfg-failed" role="status">{t('config.saveFailed')}</p> : null}
+          <div className="dsdr-cfg-actions">
+            <button type="button" className="dsdr-btn" disabled={!dirty || saving} onClick={() => void save(true)}>
+              {t('config.discard')}
+            </button>
+            <button type="button" className="dsdr-btn dsdr-btn-primary" disabled={!dirty || saving} onClick={() => void save(false)}>
+              {t('config.save')}
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </li>
+  )
+}
+
 /** Client plugin body. */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(LOCALE_NS, { zh, en }), 'diff-review: locale dictionary')
@@ -1907,6 +2020,19 @@ export function apply(ctx: ClientContext): void {
         locale: LOCALE_NS,
       },
       DiffReviewSettingsRow,
+    ),
+  )
+
+  // The config card inside 设置 → 插件 → 插件配置 (settings.plugin.item).
+  ctx.slots.inject('settings.plugin.item', () =>
+    ctx.slots.register(
+      {
+        name: 'settings.plugin.item',
+        id: 'diff-review-config',
+        order: 30,
+        locale: LOCALE_NS,
+      },
+      DiffReviewConfigCard,
     ),
   )
 }

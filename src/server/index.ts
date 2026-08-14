@@ -17,7 +17,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { execFile } from 'node:child_process'
-import { existsSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import type { ApplyResponse, CommitDiffResponse, DiffFile, GitResponse, HistoryResponse, StatusResponse } from '../shared/types.ts'
 
@@ -36,6 +37,8 @@ export interface Config {
   historyPath: string
   /** HTTP route returning one commit's diff. */
   commitDiffPath: string
+  /** HTTP route reading/writing the allowedRoots config override. */
+  configPath: string
   /** Non-empty = only workspaces under these roots may be reviewed. */
   allowedRoots: string[]
 }
@@ -47,6 +50,7 @@ export const Config: z<Config> = z.object({
   pushPath: z.string().default('/diff-review/push'),
   historyPath: z.string().default('/diff-review/history'),
   commitDiffPath: z.string().default('/diff-review/commit-diff'),
+  configPath: z.string().default('/diff-review/config'),
   allowedRoots: z.array(z.string()).default([]),
 })
 
@@ -260,7 +264,7 @@ async function revertPath(cwd: string, path: string, untracked: boolean): Promis
 
 async function applyAction(config: Config, raw: unknown): Promise<{ status: number; body: ApplyResponse }> {
   const record = isRecord(raw) ? raw : {}
-  const cwd = validateWorkspace(record.cwd, config.allowedRoots)
+  const cwd = validateWorkspace(record.cwd, effectiveAllowedRoots(config))
   if ('error' in cwd) return { status: 400, body: { ok: false, error: cwd.error } }
 
   const action = record.action
@@ -312,7 +316,7 @@ const MAX_COMMIT_MESSAGE = 2000
 /** Commit the staged changes. `git commit` refuses when nothing is staged. */
 async function commitAction(config: Config, raw: unknown): Promise<{ status: number; body: GitResponse }> {
   const record = isRecord(raw) ? raw : {}
-  const cwd = validateWorkspace(record.cwd, config.allowedRoots)
+  const cwd = validateWorkspace(record.cwd, effectiveAllowedRoots(config))
   if ('error' in cwd) return { status: 400, body: { ok: false, error: cwd.error } }
 
   const message = typeof record.message === 'string' ? record.message.trim() : ''
@@ -340,7 +344,7 @@ async function commitAction(config: Config, raw: unknown): Promise<{ status: num
 /** Push the current branch to its upstream. */
 async function pushAction(config: Config, raw: unknown): Promise<{ status: number; body: GitResponse }> {
   const record = isRecord(raw) ? raw : {}
-  const cwd = validateWorkspace(record.cwd, config.allowedRoots)
+  const cwd = validateWorkspace(record.cwd, effectiveAllowedRoots(config))
   if ('error' in cwd) return { status: 400, body: { ok: false, error: cwd.error } }
 
   const res = await git(cwd.path, ['push'])
@@ -395,7 +399,7 @@ const HASH_RE = /^[0-9a-f]{7,40}$/
 
 /** Diff of one commit (`git show <hash> --format=`). */
 async function commitDiffAction(config: Config, query: URLSearchParams): Promise<{ status: number; body: CommitDiffResponse }> {
-  const cwd = validateWorkspace(query.get('cwd'), config.allowedRoots)
+  const cwd = validateWorkspace(query.get('cwd'), effectiveAllowedRoots(config))
   if ('error' in cwd) return { status: 400, body: { ok: false, error: cwd.error, diff: '', files: [], added: 0, deleted: 0 } }
 
   const hash = query.get('hash') ?? ''
@@ -442,6 +446,37 @@ async function commitDiffAction(config: Config, query: URLSearchParams): Promise
 // ---------------------------------------------------------------------------
 
 type WorkspaceResult = { path: string } | { error: string }
+
+/** User-editable allowedRoots override (live, via the plugin config card). */
+const CONFIG_OVERRIDE_FILE = 'dsh-plugin-diff-review-config.json'
+
+function configOverridePath(): string {
+  const home = process.env.DSH_HOME || join(homedir(), '.dsh')
+  return join(home, CONFIG_OVERRIDE_FILE)
+}
+
+/** Effective allowedRoots: the config-card override wins over entry config. */
+function effectiveAllowedRoots(config: Config): string[] {
+  try {
+    const raw = JSON.parse(readFileSync(configOverridePath(), 'utf8'))
+    if (isRecord(raw) && Array.isArray(raw.allowedRoots)) {
+      return raw.allowedRoots.filter((r): r is string => typeof r === 'string')
+    }
+  } catch {
+    // absent or malformed — fall back to entry config
+  }
+  return config.allowedRoots
+}
+
+/** Read the effective config for the config card. */
+function readEffectiveConfig(config: Config): { allowedRoots: string[] } {
+  return { allowedRoots: effectiveAllowedRoots(config) }
+}
+
+/** Persist the allowedRoots override ([] restores entry config). */
+function writeConfigOverride(allowedRoots: string[]): void {
+  writeFileSync(configOverridePath(), JSON.stringify({ allowedRoots }, null, 2), 'utf8')
+}
 
 function validateWorkspace(raw: unknown, allowedRoots: string[]): WorkspaceResult {
   if (typeof raw !== 'string' || !raw.trim()) return { error: 'missing "cwd"' }
@@ -498,7 +533,7 @@ export function apply(ctx: Context, config: Config): void {
           path: config.statusPath,
           handler: async (req, res) => {
             if (req.method === 'GET' || req.method === 'HEAD') {
-              const cwd = validateWorkspace(readQuery(req).get('cwd'), config.allowedRoots)
+              const cwd = validateWorkspace(readQuery(req).get('cwd'), effectiveAllowedRoots(config))
               if ('error' in cwd) {
                 jsonResponse(res, 400, { isRepo: false, branch: null, files: [], error: cwd.error })
                 return
@@ -581,7 +616,7 @@ export function apply(ctx: Context, config: Config): void {
           path: config.historyPath,
           handler: async (req, res) => {
             if (req.method === 'GET' || req.method === 'HEAD') {
-              const cwd = validateWorkspace(readQuery(req).get('cwd'), config.allowedRoots)
+              const cwd = validateWorkspace(readQuery(req).get('cwd'), effectiveAllowedRoots(config))
               if ('error' in cwd) {
                 jsonResponse(res, 400, { ok: false, commits: [], error: cwd.error })
                 return
@@ -609,6 +644,42 @@ export function apply(ctx: Context, config: Config): void {
           },
         }),
       'diff-review: commit-diff route',
+    )
+    // Config card surface: read/write the allowedRoots override.
+    httpCtx.effect(
+      () =>
+        httpCtx.webServer!.register({
+          kind: 'exact',
+          path: config.configPath,
+          handler: async (req, res) => {
+            if (req.method === 'GET' || req.method === 'HEAD') {
+              jsonResponse(res, 200, { ok: true, ...readEffectiveConfig(config) })
+              return
+            }
+            if (req.method === 'POST') {
+              const raw = await readJsonBody(req)
+              if (raw === null) {
+                jsonResponse(res, 400, { ok: false, error: 'invalid JSON body' })
+                return
+              }
+              const record = isRecord(raw) ? raw : {}
+              const cfg = isRecord(record.config) ? record.config : {}
+              if (!Array.isArray(cfg.allowedRoots) || cfg.allowedRoots.some((r) => typeof r !== 'string')) {
+                jsonResponse(res, 400, { ok: false, error: 'config.allowedRoots must be an array of paths' })
+                return
+              }
+              try {
+                writeConfigOverride(cfg.allowedRoots)
+                jsonResponse(res, 200, { ok: true, allowedRoots: effectiveAllowedRoots(config) })
+              } catch (e) {
+                jsonResponse(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) })
+              }
+              return
+            }
+            jsonResponse(res, 405, { ok: false, error: 'method not allowed' })
+          },
+        }),
+      'diff-review: config route',
     )
   })
 }
