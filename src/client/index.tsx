@@ -681,7 +681,7 @@ const REVIEW_CSS = `
 .dsdr-pr-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-pr-meta{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
 .dsdr-pr-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere}
-.dsdr-dock{display:flex;flex-direction:column;gap:2px;margin:6px 12px 0;padding:6px 10px;background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;box-shadow:var(--dsw-shadow-lv3);font-size:12px;line-height:18px}
+.dsdr-dock{display:flex;flex-direction:column;gap:2px;margin-top:6px;padding:6px 10px;background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;box-shadow:var(--dsw-shadow-lv3);font-size:12px;line-height:18px}
 .dsdr-dock-head{display:flex;align-items:center;gap:6px;min-height:22px}
 .dsdr-dock-icon{display:inline-flex;color:var(--dsw-alias-button-info-fill)}
 .dsdr-dock-count{font-weight:600;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary);white-space:nowrap}
