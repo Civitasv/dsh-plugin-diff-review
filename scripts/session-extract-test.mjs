@@ -96,7 +96,11 @@ function collectSessionRounds(nodes) {
       rounds.push(current)
       continue
     }
-    if (node.kind !== 'tool-result' || !current) continue
+    if (node.kind !== 'tool-result') continue
+    if (!current) {
+      current = { round: rounds.length + 1, label: '', changes: [] }
+      rounds.push(current)
+    }
     for (const change of changesFromToolResult(node.call, node)) {
       const existing = current.changes.find((c) => c.path === change.path && c.tool === change.tool)
       if (existing) {
@@ -184,6 +188,11 @@ check('unrelated tool skipped', rounds.length === 0)
 // 6. count (badge) counts distinct tool:path, including truncated calls
 const count = countSessionChanges([{ kind: 'user', content: [] }, nodeResultDiff, nodeTruncated, nodePathOnly, nodeBash])
 check('count distinct tool:path', count === 3, String(count))
+
+// 7. window starts mid-turn: tool results before any user node still surface
+// under an implicit round
+const midTurn = collectSessionRounds([nodeResultDiff, nodeTruncated])
+check('implicit round for leading tool results', midTurn.length === 1 && midTurn[0].changes.length === 2, JSON.stringify(midTurn.map((r) => r.changes.map((c) => c.path))))
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURES`)
 process.exit(failures === 0 ? 0 : 1)

@@ -309,7 +309,13 @@ export function collectSessionRounds(nodes: readonly ConversationNode[]): Sessio
       rounds.push(current)
       continue
     }
-    if (node.kind !== 'tool-result' || !current) continue
+    if (node.kind !== 'tool-result') continue
+    // The window can start mid-turn (the leading user message truncated out);
+    // still surface the tool results under an implicit round.
+    if (!current) {
+      current = { round: rounds.length + 1, label: '', changes: [] }
+      rounds.push(current)
+    }
     for (const change of changesFromToolResult(node.call, node)) {
       const existing = current.changes.find((c) => c.path === change.path && c.tool === change.tool)
       if (existing) {
@@ -810,6 +816,7 @@ const zh = {
   'review.notRepo': '当前目录不是 git 仓库',
   'review.notRepoHint': '「会话更改」页签不受影响，仍可查看每轮修改。',
   'review.noSessionChanges': '这个会话还没有文件修改记录',
+  'review.sessionScan': '已扫描 {results} 个工具结果：{diff} 个携带 diff、{path} 个仅有路径——终端命令（bash）改文件不会计入会话记录。',
   'review.sessionStats': '{rounds} 轮 · {files} 个文件',
   'review.round': '第 {round} 轮',
   'review.empty': '没有未提交的更改 🎉',
@@ -935,6 +942,7 @@ const en: Record<keyof typeof zh, string> = {
   'review.notRepo': 'This directory is not a git repository',
   'review.notRepoHint': 'The "Session" tab still shows every round\'s changes.',
   'review.noSessionChanges': 'No file changes recorded in this session yet',
+  'review.sessionScan': 'Scanned {results} tool results: {diff} with diffs, {path} path-only — terminal (bash) edits are not tracked in the session log.',
   'review.sessionStats': '{rounds} rounds · {files} files',
   'review.round': 'Round {round}',
   'review.empty': 'No uncommitted changes 🎉',
@@ -2135,6 +2143,23 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   )
 
   const rounds = useMemo(() => (snapshot ? collectSessionRounds(snapshot.nodes) : []), [snapshot])
+  // Diagnostics for the empty session-changes state: what the snapshot scan found.
+  const sessionScan = useMemo(() => {
+    if (!snapshot) return null
+    let results = 0
+    let diffCards = 0
+    let pathOnly = 0
+    for (const node of snapshot.nodes) {
+      if (node.kind !== 'tool-result') continue
+      results++
+      const changes = changesFromToolResult(node.call, node)
+      if (changes.length > 0) {
+        if (changes.some((x) => x.hasDiff)) diffCards++
+        else pathOnly++
+      }
+    }
+    return { results, diffCards, pathOnly }
+  }, [snapshot])
   // Left-hand file trees: per-round trees for the session tab, one tree for
   // the git working tree on the workspace tab.
   const sessionTrees = useMemo(() => new Map(rounds.map((r) => [r.round, buildFileTree(r.changes, (c) => c.path)])), [rounds])
@@ -2883,17 +2908,6 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               </button>
             </>
           ) : null}
-          {tab === 'workspace' && status?.isRepo && reviewableFiles > 0 ? (
-            <button
-              type="button"
-              className="dsdr-btn dsdr-btn-primary"
-              disabled={busy || reviewing}
-              onClick={() => void onReview()}
-              title={t('review.reviewScope')}
-            >
-              {reviewing ? t('review.reviewing') : t('review.review')}
-            </button>
-          ) : null}
           <button type="button" className="dsdr-btn" aria-label={t('review.close')} onClick={close}>
             <IconX />
           </button>
@@ -2930,7 +2944,12 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
 
         {tab === 'session' ? (
           rounds.length === 0 ? (
-            <div className="dsdr-empty">{t('review.noSessionChanges')}</div>
+            <div className="dsdr-empty">
+              {t('review.noSessionChanges')}
+              {sessionScan && sessionScan.results > 0 ? (
+                <div className="dsdr-nodiff">{t('review.sessionScan', { results: sessionScan.results, diff: sessionScan.diffCards, path: sessionScan.pathOnly })}</div>
+              ) : null}
+            </div>
           ) : (
             <div className="dsdr-body">
               <div className="dsdr-files" role="listbox" aria-label={t('tab.session')}>
