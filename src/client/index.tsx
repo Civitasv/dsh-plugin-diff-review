@@ -25,6 +25,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConversationNode, ToolResultNode, UserMessageNode } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ToolResultView } from '@deepseek-ai/dsh-api-remotes/client'
+import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only imports pulling the header-action slot contract, the shell.overlay
 // contract, the settings.general.item slot contract and the standard kit.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -522,21 +523,24 @@ const REVIEW_CSS = `
 .dsdr-diff-hash{margin-left:8px;font-size:11px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
 .dsdr-commit-file-head{display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
 .dsdr-commit-file-path{font-family:var(--dsw-font-mono);font-size:12px;color:var(--dsw-alias-label-primary);margin-left:4px}
-.dsdr-cfg-card{border:1px solid var(--dsw-alias-border-l2);border-radius:12px;list-style:none;margin-bottom:10px;overflow:hidden}
-.dsdr-cfg-head{align-items:center;background:transparent;border:0;color:var(--dsw-alias-label-primary);cursor:pointer;display:flex;font:inherit;gap:8px;padding:10px 12px;text-align:left;width:100%}
-.dsdr-cfg-head:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.dsdr-cfg-name{font-size:13px;font-weight:600}
-.dsdr-cfg-desc{color:var(--dsw-alias-label-tertiary);flex:1;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dsdr-cfg-pending{background:rgba(46,160,67,.16);border-radius:999px;color:var(--dsw-alias-state-success-primary);flex:none;font-size:11px;padding:1px 8px}
-.dsdr-cfg-caret{color:var(--dsw-alias-label-tertiary);flex:none;font-size:10px}
-.dsdr-cfg-body{display:flex;flex-direction:column;gap:12px;padding:4px 12px 12px}
-.dsdr-cfg-field{display:flex;flex-direction:column;gap:4px}
-.dsdr-cfg-label{color:var(--dsw-alias-label-secondary);font-size:12px}
-.dsdr-cfg-textarea{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:7px;color:var(--dsw-alias-label-primary);font:inherit;font-family:var(--dsw-font-mono);font-size:12px;line-height:1.6;min-height:72px;padding:6px 8px;resize:vertical}
-.dsdr-cfg-textarea:focus{outline:none;border-color:var(--dsw-alias-brand-primary)}
-.dsdr-cfg-hint{color:var(--dsw-alias-label-caption);font-size:11px}
-.dsdr-cfg-failed{color:var(--dsw-alias-state-error-primary);font-size:12px;margin:0}
-.dsdr-cfg-actions{display:flex;gap:8px;justify-content:flex-end}
+.dsdr-cfg-card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:12px;list-style:none;transition:border-color .16s,background .16s}
+.dsdr-cfg-card:hover{border-color:var(--dsw-alias-label-dimmed)}
+.dsdr-cfg-card-open{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-label-dimmed)}
+.dsdr-cfg-head{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:12px;align-items:center;gap:12px;padding:14px 16px;display:flex}
+.dsdr-cfg-head:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.dsdr-cfg-head-text{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}
+.dsdr-cfg-name{color:var(--dsw-alias-label-primary);font-size:15px;font-weight:600;line-height:1.4}
+.dsdr-cfg-desc{color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:1.5}
+.dsdr-cfg-caret{color:var(--dsw-alias-label-tertiary);flex:none;transition:transform .16s}
+.dsdr-cfg-caret-open{transform:rotate(180deg)}
+.dsdr-cfg-body{border-top:1px solid var(--dsw-alias-border-l2);margin:0 16px;padding-bottom:8px;display:flex;flex-direction:column}
+.dsdr-cfg-field{flex-direction:column;gap:6px;padding:12px 0;display:flex}
+.dsdr-cfg-field+.dsdr-cfg-field{border-top:1px solid var(--dsw-alias-border-l2)}
+.dsdr-cfg-label{min-width:0;color:var(--dsw-alias-label-primary);flex:1;font-size:13px;font-weight:500;line-height:1.5}
+.dsdr-cfg-hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:12px;line-height:1.5}
+.dsdr-cfg-pending{white-space:nowrap;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:1px 8px;font-size:11px;font-weight:500;line-height:17px}
+.dsdr-cfg-failed{min-width:0;color:var(--dsw-alias-label-error);flex:1;margin:0;font-size:12px;line-height:1.5}
+.dsdr-cfg-actions{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:12px 0 4px;display:flex}
 .dsdr-body{display:flex;flex:1;min-height:0}
 .dsdr-files{width:300px;flex:none;border-right:1px solid var(--dsw-alias-border-l1);overflow-y:auto;padding:8px}
 .dsdr-round{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);padding:8px 8px 3px;font-weight:600}
@@ -579,14 +583,10 @@ const REVIEW_CSS = `
 @keyframes dsdr-spin{to{transform:rotate(360deg)}}
 .dsdr-empty{padding:40px;text-align:center;color:var(--dsw-alias-label-tertiary);font-size:13px}
 .dsdr-nodiff{padding:8px 16px;color:var(--dsw-alias-label-tertiary);font-size:12px}
-.dsdr-set-row{border-bottom:1px solid var(--dsw-alias-border-l2);display:flex;flex-direction:column;gap:10px;padding:16px 0}
-.dsdr-set-title{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:400;line-height:22px}
-.dsdr-set-grid{display:flex;flex-wrap:wrap;gap:12px}
-.dsdr-set-field{display:flex;flex-direction:column;gap:4px;color:var(--dsw-alias-label-tertiary);font-size:12px}
 .dsdr-sel{position:relative;display:inline-flex}
-.dsdr-sel-trigger{box-sizing:border-box;min-width:180px;min-height:28px;background:var(--dsw-alias-fill-l2);border:1px solid var(--dsw-alias-border-l2);border-radius:7px;color:var(--dsw-alias-label-primary);cursor:pointer;padding:2px 8px;font:inherit;font-size:12px;line-height:18px;display:inline-flex;align-items:center;gap:8px}
-.dsdr-sel-trigger:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.dsdr-sel-trigger:focus-visible{outline:1px solid var(--dsw-static-neutral-bluish-400)}
+.dsdr-sel-trigger{box-sizing:content-box;min-width:180px;height:34px;background:var(--dsw-alias-bg-layer-3);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;color:var(--dsw-alias-label-primary);cursor:pointer;padding:0 12px;font:inherit;font-size:13px;line-height:1.5;display:inline-flex;align-items:center;gap:8px}
+.dsdr-sel-trigger:hover{border-color:var(--dsw-alias-label-dimmed)}
+.dsdr-sel-trigger:focus-visible{border-color:var(--dsw-alias-brand-primary);outline:none}
 .dsdr-sel-trigger svg{flex:none;transition:transform .12s}
 .dsdr-sel-trigger[aria-expanded="true"] svg{transform:rotate(180deg)}
 .dsdr-sel-value{flex:1;min-width:0;text-align:left;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
@@ -1019,37 +1019,34 @@ function ThemeSelect({
 function DiffReviewPrefs({ t }: { t: (key: keyof typeof zh, params?: Record<string, unknown>) => string }) {
   const prefs = useSyncExternalStore(prefsStore.subscribe, prefsStore.getSnapshot)
   return (
-    <div className="dsdr-set-row">
-      <div className="dsdr-set-title">{t('settings.title')}</div>
-      <div className="dsdr-set-grid">
-        <label className="dsdr-set-field">
-          <span>{t('settings.font')}</span>
-          <ThemeSelect
-            ariaLabel={t('settings.font')}
-            value={prefs.font}
-            options={FONT_OPTIONS.map((f) => ({ value: f.id, label: f.label.startsWith('font.') ? t(f.label as keyof typeof zh) : f.label }))}
-            onChange={(font) =>
-              prefsStore.update((d) => {
-                d.font = font
-              })
-            }
-          />
-        </label>
-        <label className="dsdr-set-field">
-          <span>{t('settings.size')}</span>
-          <ThemeSelect
-            ariaLabel={t('settings.size')}
-            value={String(prefs.size)}
-            options={SIZE_OPTIONS.map((s) => ({ value: String(s), label: `${s}px` }))}
-            onChange={(size) =>
-              prefsStore.update((d) => {
-                d.size = Number(size)
-              })
-            }
-          />
-        </label>
+    <>
+      <div className="dsdr-cfg-field">
+        <span className="dsdr-cfg-label" id="dsdr-pref-font-label">{t('settings.font')}</span>
+        <ThemeSelect
+          ariaLabel={t('settings.font')}
+          value={prefs.font}
+          options={FONT_OPTIONS.map((f) => ({ value: f.id, label: f.label.startsWith('font.') ? t(f.label as keyof typeof zh) : f.label }))}
+          onChange={(font) =>
+            prefsStore.update((d) => {
+              d.font = font
+            })
+          }
+        />
       </div>
-    </div>
+      <div className="dsdr-cfg-field">
+        <span className="dsdr-cfg-label" id="dsdr-pref-size-label">{t('settings.size')}</span>
+        <ThemeSelect
+          ariaLabel={t('settings.size')}
+          value={String(prefs.size)}
+          options={SIZE_OPTIONS.map((s) => ({ value: String(s), label: `${s}px` }))}
+          onChange={(size) =>
+            prefsStore.update((d) => {
+              d.size = Number(size)
+            })
+          }
+        />
+      </div>
+    </>
   )
 }
 
@@ -1893,11 +1890,13 @@ function DiffReviewConfigCard({ t }: { t: (key: keyof typeof zh, params?: Record
   const [open, setOpen] = useState(false)
 
   return (
-    <li className="dsdr-cfg-card">
+    <li className={open ? 'dsdr-cfg-card dsdr-cfg-card-open' : 'dsdr-cfg-card'}>
       <button type="button" className="dsdr-cfg-head" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        <span className="dsdr-cfg-name">{t('settings.title')}</span>
-        <span className="dsdr-cfg-desc">{t('config.title')}</span>
-        <span className="dsdr-cfg-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
+        <span className="dsdr-cfg-head-text">
+          <span className="dsdr-cfg-name">{t('settings.title')}</span>
+          <span className="dsdr-cfg-desc">{t('config.title')}</span>
+        </span>
+        <IconChevronDownOutline14 className={open ? 'dsdr-cfg-caret dsdr-cfg-caret-open' : 'dsdr-cfg-caret'} />
       </button>
       {open ? (
         <div className="dsdr-cfg-body">
