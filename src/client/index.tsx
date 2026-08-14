@@ -400,6 +400,25 @@ function textDiffRows(oldText: string | null, newText: string): DiffRow[] {
   return rows
 }
 
+/** Session change rows with relative old/new line numbers (hunk rows reset). */
+function sessionRowsWithLines(change: RoundChange): { row: DiffRow; oldLine: number | null; newLine: number | null }[] {
+  const out: { row: DiffRow; oldLine: number | null; newLine: number | null }[] = []
+  let oldLine = 1
+  let newLine = 1
+  for (const row of changeRows(change)) {
+    if (row.kind === 'ctx') {
+      out.push({ row, oldLine: oldLine++, newLine: newLine++ })
+    } else if (row.kind === 'add') {
+      out.push({ row, oldLine: null, newLine: newLine++ })
+    } else if (row.kind === 'del') {
+      out.push({ row, oldLine: oldLine++, newLine: null })
+    } else {
+      out.push({ row, oldLine: null, newLine: null })
+    }
+  }
+  return out
+}
+
 /** All rows for one round change (multiple hunks get `@@` separators). */
 function changeRows(change: RoundChange): DiffRow[] {
   if (!change.hasDiff || change.hunks.length === 0) return []
@@ -2455,12 +2474,13 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   }
 
   const saveComment = async () => {
-    if (!selectedFile || !commentEditor || busy) return
+    const commentPath = tab === 'workspace' ? selectedFile?.path : selectedChange?.path
+    if (!commentPath || !commentEditor || busy) return
     const text = commentText.trim()
     if (!text) return
     const comment: ReviewComment = {
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      path: selectedFile.path,
+      path: commentPath,
       lineNew: commentEditor.newLine,
       lineOld: commentEditor.oldLine,
       text,
@@ -2927,16 +2947,171 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                       <span className="dsdr-diff-path" title={selectedChange.path}>{selectedChange.path}</span>
                       <span className="dsdr-tool">{selectedChange.tool}</span>
                       {selectedChange.hasDiff ? <DiffViewToggle view={view} onChange={setView} t={t} /> : null}
+                      <button type="button" className="dsdr-btn" disabled={busy} onClick={() => void openFile(selectedChange.path)} title={t('editor.openFile')}>
+                        ↗ {t('editor.openFile')}
+                      </button>
                     </div>
                     {selectedChange.hasDiff ? (
                       view === 'split' && changeSplitBlocks(selectedChange).length > 0 ? (
-                        <SplitDiff blocks={changeSplitBlocks(selectedChange)} beforeLabel={t('view.before')} afterLabel={t('view.after')} />
+                        <div className="dsdr-diff-scroll">
+                          <div className="dsdr-split">
+                            <div className="dsdr-split-head">
+                              <div>
+                                <span className="dsdr-split-num" aria-hidden="true" />
+                                <span>{t('view.before')}</span>
+                              </div>
+                              <div>
+                                <span className="dsdr-split-num" aria-hidden="true" />
+                                <span>{t('view.after')}</span>
+                              </div>
+                            </div>
+                            {changeSplitBlocks(selectedChange).map((block, bi) => (
+                              <Fragment key={bi}>
+                                {block.head ? <div className="dsdr-split-hunk">{block.head}</div> : null}
+                                {block.rows.map((row, ri) => {
+                                  const leftAnchor = { oldLine: row.leftNum, newLine: row.kind === 'ctx' && row.leftNum !== null ? row.leftNum : null }
+                                  const rightAnchor = { oldLine: row.kind === 'ctx' && row.rightNum !== null ? row.rightNum : null, newLine: row.rightNum }
+                                  const leftKey = `${leftAnchor.oldLine ?? 'o'}:${leftAnchor.newLine ?? 'n'}`
+                                  const rightKey = `${rightAnchor.oldLine ?? 'o'}:${rightAnchor.newLine ?? 'n'}`
+                                  const leftComments = comments.filter((c) => commentMatches(c, leftAnchor.oldLine, leftAnchor.newLine))
+                                  const rightComments = comments.filter((c) => commentMatches(c, rightAnchor.oldLine, rightAnchor.newLine))
+                                  const commentBtn = (anchor: { oldLine: number | null; newLine: number | null }, count: number) => {
+                                    const key = `${anchor.oldLine ?? 'o'}:${anchor.newLine ?? 'n'}`
+                                    return (
+                                      <CommentLine
+                                        count={count}
+                                        open={commentPopover === key}
+                                        onOpen={() => {
+                                          setCommentEditor({ oldLine: anchor.oldLine, newLine: anchor.newLine })
+                                          setCommentText('')
+                                          setCommentPopover(null)
+                                        }}
+                                        onToggle={() => setCommentPopover((prev) => (prev === key ? null : key))}
+                                        t={t}
+                                      />
+                                    )
+                                  }
+                                  const openBtn = (line: number) => (
+                                    <button type="button" className="dsdr-split-openline" title={t('editor.openLine')} aria-label={t('editor.openLine')} onClick={() => void openFile(selectedChange.path, line)}>
+                                      ↗
+                                    </button>
+                                  )
+                                  return (
+                                    <Fragment key={ri}>
+                                      <div className="dsdr-split-row">
+                                        <div
+                                          className={`dsdr-split-cell ${row.leftNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-del' : ''}`}
+                                          data-dsdr-line={row.leftNum ?? undefined}
+                                        >
+                                          <span className="dsdr-split-num">
+                                            {row.leftNum ?? ''}
+                                            {commentBtn(leftAnchor, leftComments.length)}
+                                          </span>
+                                          <span className="dsdr-split-text">{row.left}</span>
+                                          {row.leftNum !== null ? openBtn(row.leftNum) : null}
+                                        </div>
+                                        <div
+                                          className={`dsdr-split-cell ${row.rightNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-add' : ''}`}
+                                          data-dsdr-line={row.rightNum ?? undefined}
+                                        >
+                                          <span className="dsdr-split-num">
+                                            {row.rightNum ?? ''}
+                                            {commentBtn(rightAnchor, rightComments.length)}
+                                          </span>
+                                          <span className="dsdr-split-text">{row.right}</span>
+                                          {row.rightNum !== null ? openBtn(row.rightNum) : null}
+                                        </div>
+                                        {leftComments.length > 0 && commentPopover === leftKey ? (
+                                          <div className="dsdr-comment-pop">
+                                            {leftComments.map((comment) => (
+                                              <div key={comment.id} className="dsdr-comment-item">
+                                                <div className="dsdr-comment-text">{comment.text}</div>
+                                                <div className="dsdr-comment-meta">
+                                                  <span>{comment.path}</span>
+                                                  <button type="button" className="dsdr-btn dsdr-btn-danger" disabled={busy} onClick={() => void deleteComment(comment.id)}>
+                                                    {t('comment.delete')}
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : null}
+                                        {rightComments.length > 0 && commentPopover === rightKey ? (
+                                          <div className="dsdr-comment-pop">
+                                            {rightComments.map((comment) => (
+                                              <div key={comment.id} className="dsdr-comment-item">
+                                                <div className="dsdr-comment-text">{comment.text}</div>
+                                                <div className="dsdr-comment-meta">
+                                                  <span>{comment.path}</span>
+                                                  <button type="button" className="dsdr-btn dsdr-btn-danger" disabled={busy} onClick={() => void deleteComment(comment.id)}>
+                                                    {t('comment.delete')}
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                      {commentEditor && (leftKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` || rightKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}`) ? (
+                                        <CommentEditor text={commentText} onText={setCommentText} onSave={() => void saveComment()} onCancel={cancelComment} busy={busy} t={t} />
+                                      ) : null}
+                                    </Fragment>
+                                  )
+                                })}
+                              </Fragment>
+                            ))}
+                          </div>
+                        </div>
                       ) : (
                         <div className="dsdr-diff-scroll">
                           <pre className="dsdr-pre">
-                            {changeRows(selectedChange).map((row, i) => (
-                              <div key={i} className={`dsdr-line dsdr-line-${row.kind}`}>{row.text || ' '}</div>
-                            ))}
+                            {sessionRowsWithLines(selectedChange).map(({ row, oldLine, newLine }, i) => {
+                              const key = `${oldLine ?? 'o'}:${newLine ?? 'n'}`
+                              const rowComments = comments.filter((c) => commentMatches(c, oldLine, newLine))
+                              const showActions = row.kind === 'ctx' || row.kind === 'add' || row.kind === 'del'
+                              return (
+                                <Fragment key={i}>
+                                  <div className={`dsdr-line dsdr-line-${row.kind}${rowComments.length > 0 ? ' dsdr-line-commented' : ''}`} data-dsdr-line={newLine ?? oldLine ?? undefined}>
+                                    <span className="dsdr-line-num">
+                                      {newLine ?? oldLine ?? ''}
+                                      {showActions ? (
+                                        <CommentLine
+                                          count={rowComments.length}
+                                          open={commentPopover === key}
+                                          onOpen={() => openComment(oldLine, newLine)}
+                                          onToggle={() => setCommentPopover((prev) => (prev === key ? null : key))}
+                                          t={t}
+                                        />
+                                      ) : null}
+                                    </span>
+                                    <span className="dsdr-line-text">{row.text || ' '}</span>
+                                    {showActions && (newLine ?? oldLine) ? (
+                                      <button type="button" className="dsdr-openline" title={t('editor.openLine')} aria-label={t('editor.openLine')} onClick={() => void openFile(selectedChange.path, newLine ?? oldLine ?? 1)}>
+                                        ↗
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                  {showActions && rowComments.length > 0 && commentPopover === key ? (
+                                    <div className="dsdr-comment-pop">
+                                      {rowComments.map((comment) => (
+                                        <div key={comment.id} className="dsdr-comment-item">
+                                          <div className="dsdr-comment-text">{comment.text}</div>
+                                          <div className="dsdr-comment-meta">
+                                            <span>{comment.path}</span>
+                                            <button type="button" className="dsdr-btn dsdr-btn-danger" disabled={busy} onClick={() => void deleteComment(comment.id)}>
+                                              {t('comment.delete')}
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                  {commentEditor && `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` === key ? (
+                                    <CommentEditor text={commentText} onText={setCommentText} onSave={() => void saveComment()} onCancel={cancelComment} busy={busy} t={t} />
+                                  ) : null}
+                                </Fragment>
+                              )
+                            })}
                           </pre>
                         </div>
                       )
