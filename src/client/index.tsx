@@ -1081,7 +1081,9 @@ function FileTreeView<T>(props: {
 function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const storeState = useSyncExternalStore(overlayStore.subscribe, overlayStore.getSnapshot)
   const prefs = useSyncExternalStore(prefsStore.subscribe, prefsStore.getSnapshot)
-  const [tab, setTab] = useState<'session' | 'workspace'>('session')
+  // Git-first: land on the workspace tab (staged/unstaged/branch trees) so the
+  // change review is one click away; the session tab stays a click away.
+  const [tab, setTab] = useState<'session' | 'workspace'>('workspace')
   const [view, setView] = useState<ViewMode>(() => {
     try {
       return typeof localStorage !== 'undefined' && localStorage.getItem('dsdr-view') === 'split' ? 'split' : 'single'
