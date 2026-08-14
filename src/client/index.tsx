@@ -250,6 +250,133 @@ function changeRows(change: RoundChange): DiffRow[] {
 }
 
 // ---------------------------------------------------------------------------
+// Split (two-column) diff view.
+// ---------------------------------------------------------------------------
+
+/** One aligned row of the side-by-side view. */
+interface SplitRow {
+  left: string
+  right: string
+  /** 1-based line number in the old file, or null (pure addition). */
+  leftNum: number | null
+  /** 1-based line number in the new file, or null (pure deletion). */
+  rightNum: number | null
+  kind: 'ctx' | 'change'
+}
+
+/** One side-by-side block (a hunk with its `@@` header). */
+interface SplitBlock {
+  head: string | null
+  rows: SplitRow[]
+}
+
+/**
+ * Pair add/del rows into aligned left/right columns. Removed lines buffer
+ * until the matching additions arrive (unified diff orders deletions before
+ * additions), so pure deletions and pure additions still get their own row
+ * with an empty cell on the opposite side. Line numbers track from the hunk
+ * header's `-a,b +c,d` positions.
+ */
+function pairRows(rows: DiffRow[], oldStart: number, newStart: number): SplitRow[] {
+  const out: SplitRow[] = []
+  let oldLine = oldStart
+  let newLine = newStart
+  let pending: { text: string; num: number }[] = []
+  const flush = () => {
+    for (const p of pending) out.push({ left: p.text, right: '', leftNum: p.num, rightNum: null, kind: 'change' })
+    pending = []
+  }
+  for (const row of rows) {
+    if (row.kind === 'del') {
+      pending.push({ text: row.text.slice(1), num: oldLine++ })
+    } else if (row.kind === 'add') {
+      const p = pending.shift()
+      out.push({ left: p?.text ?? '', right: row.text.slice(1), leftNum: p?.num ?? null, rightNum: newLine++, kind: 'change' })
+    } else if (row.kind === 'ctx') {
+      flush()
+      // Unified-diff context lines carry a leading space — strip it for the
+      // split cells so both columns render bare text.
+      const text = row.text.startsWith(' ') ? row.text.slice(1) : row.text
+      out.push({ left: text, right: text, leftNum: oldLine++, rightNum: newLine++, kind: 'ctx' })
+    } else {
+      flush() // notes (\ No newline…) and stray rows: just break the pairing
+    }
+  }
+  flush()
+  return out
+}
+
+/** Parse git unified diff text into blocks (`---/+++` file rows and `@@` hunks). */
+const GIT_META = /^(diff --git |index |new file |deleted file |old mode |new mode |similarity index |rename (from|to) |Binary files )/
+
+function parseGitBlocks(diff: string): { head: DiffRow | null; rows: DiffRow[] }[] {
+  const blocks: { head: DiffRow | null; rows: DiffRow[] }[] = []
+  let current: { head: DiffRow | null; rows: DiffRow[] } | null = null
+  const lines = diff.split('\n')
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+  for (const line of lines) {
+    let kind: DiffRow['kind']
+    if (line.startsWith('+++') || line.startsWith('---') || GIT_META.test(line)) kind = 'file'
+    else if (line.startsWith('@@')) kind = 'hunk'
+    else if (line.startsWith('+')) kind = 'add'
+    else if (line.startsWith('-')) kind = 'del'
+    else if (line.startsWith('\\ ')) kind = 'note'
+    else kind = 'ctx'
+    if (kind === 'file' || kind === 'hunk') {
+      current = { head: { kind, text: line }, rows: [] }
+      blocks.push(current)
+    } else {
+      if (!current) {
+        current = { head: null, rows: [] }
+        blocks.push(current)
+      }
+      current.rows.push({ kind, text: line })
+    }
+  }
+  return blocks
+}
+
+/** Hunk start positions from a `@@ -a,b +c,d @@` header. */
+function hunkStarts(head: string): { oldStart: number; newStart: number } {
+  const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(head)
+  return { oldStart: m ? Number(m[1]) : 1, newStart: m ? Number(m[2]) : 1 }
+}
+
+/** Side-by-side blocks for a git unified diff (skips pure file-header blocks). */
+function gitSplitBlocks(diff: string): SplitBlock[] {
+  return parseGitBlocks(diff)
+    .filter((b) => b.head?.kind !== 'file' && (b.rows.length > 0 || b.head?.kind === 'hunk'))
+    .map((b) => {
+      const starts = b.head ? hunkStarts(b.head.text) : { oldStart: 1, newStart: 1 }
+      return { head: b.head?.kind === 'hunk' ? b.head.text : null, rows: pairRows(b.rows, starts.oldStart, starts.newStart) }
+    })
+}
+
+/** Side-by-side blocks for the tools' FileDiff shape (oldText/newText). */
+function textSplitBlocks(oldText: string | null, newText: string): SplitBlock[] {
+  const rows: DiffRow[] = []
+  for (const part of diffLines(oldText ?? '', newText)) {
+    const lines = part.value.split('\n')
+    if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+    for (const line of lines) {
+      if (part.added) rows.push({ kind: 'add', text: `+${line}` })
+      else if (part.removed) rows.push({ kind: 'del', text: `-${line}` })
+      else rows.push({ kind: 'ctx', text: line })
+    }
+  }
+  return [{ head: null, rows: pairRows(rows, 1, 1) }]
+}
+
+/** All side-by-side blocks for one round change. */
+function changeSplitBlocks(change: RoundChange): SplitBlock[] {
+  if (!change.hasDiff || change.hunks.length === 0) return []
+  return change.hunks.map((hunk, i) => ({
+    head: change.hunks.length > 1 ? `@@ hunk ${i + 1}/${change.hunks.length} @@` : null,
+    rows: textSplitBlocks(hunk.oldText, hunk.newText)[0].rows,
+  }))
+}
+
+// ---------------------------------------------------------------------------
 // Styles (dsdr-*; the header trigger mirrors the in-tree action rows).
 // ---------------------------------------------------------------------------
 
@@ -313,6 +440,21 @@ const REVIEW_CSS = `
 @keyframes dsdr-spin{to{transform:rotate(360deg)}}
 .dsdr-empty{padding:40px;text-align:center;color:var(--dsw-alias-label-tertiary);font-size:13px}
 .dsdr-nodiff{padding:8px 16px;color:var(--dsw-alias-label-tertiary);font-size:12px}
+.dsdr-view-toggle{display:flex;gap:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;padding:2px;flex:none}
+.dsdr-view-btn{box-sizing:border-box;min-height:22px;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:1px 8px;font:inherit;font-size:11px;line-height:16px}
+.dsdr-view-btn:hover{color:var(--dsw-alias-label-secondary)}
+.dsdr-view-btn-active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsdr-split{min-width:100%}
+.dsdr-split-head{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:11px;line-height:18px;color:var(--dsw-alias-label-tertiary);padding:4px 8px;position:sticky;top:0;background:var(--dsw-alias-bg-module-platform)}
+.dsdr-split-head div{display:flex;gap:8px}
+.dsdr-split-hunk{color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-fill-l2);font-family:var(--dsw-font-mono);font-size:11px;line-height:18px;padding:2px 16px}
+.dsdr-split-row{display:grid;grid-template-columns:1fr 1fr;font-family:var(--dsw-font-mono);font-size:12px;line-height:18px}
+.dsdr-split-cell{display:flex;gap:8px;padding:0 8px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
+.dsdr-split-num{flex:none;width:36px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:11px;line-height:18px}
+.dsdr-split-text{flex:1;min-width:0}
+.dsdr-cell-add{background:rgba(46,160,67,.13)}
+.dsdr-cell-del{background:rgba(248,81,73,.12)}
+.dsdr-cell-dim{background:var(--dsw-alias-fill-l1, rgba(128,128,128,.05))}
 `
 if (typeof document !== 'undefined' && document.querySelector(`style[data-plugin-css=${JSON.stringify(STYLE_TAG)}]`) === null) {
   const tag = document.createElement('style')
@@ -355,6 +497,10 @@ const zh = {
   'review.binary': '二进制',
   'review.noDiffData': '该修改没有 diff 数据',
   'review.changes': '{added}+ {deleted}-',
+  'view.single': '单栏',
+  'view.split': '双栏',
+  'view.before': '原文件',
+  'view.after': '新文件',
 } as const
 
 /** English dictionary, checked complete against the zh key set. */
@@ -390,6 +536,10 @@ const en: Record<keyof typeof zh, string> = {
   'review.binary': 'binary',
   'review.noDiffData': 'No diff data for this change',
   'review.changes': '{added}+ {deleted}-',
+  'view.single': 'Single',
+  'view.split': 'Split',
+  'view.before': 'Before',
+  'view.after': 'After',
 }
 
 type DiffReviewActionProps = PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'diff-review'>
@@ -422,6 +572,70 @@ function IconRefresh() {
       <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
       <path d="M21 3v5h-5" />
     </svg>
+  )
+}
+
+type ViewMode = 'single' | 'split'
+
+/** 单栏 / 双栏 segmented toggle (persisted across opens). */
+function DiffViewToggle({ view, onChange, t }: { view: ViewMode; onChange: (v: ViewMode) => void; t: (key: keyof typeof zh, params?: Record<string, unknown>) => string }) {
+  return (
+    <div className="dsdr-view-toggle" role="group" aria-label={t('view.single')}>
+      <button
+        type="button"
+        className={`dsdr-view-btn${view === 'single' ? ' dsdr-view-btn-active' : ''}`}
+        aria-pressed={view === 'single'}
+        onClick={() => onChange('single')}
+      >
+        {t('view.single')}
+      </button>
+      <button
+        type="button"
+        className={`dsdr-view-btn${view === 'split' ? ' dsdr-view-btn-active' : ''}`}
+        aria-pressed={view === 'split'}
+        onClick={() => onChange('split')}
+      >
+        {t('view.split')}
+      </button>
+    </div>
+  )
+}
+
+/** Two-column side-by-side diff body (old left, new right, line numbers aligned). */
+function SplitDiff({ blocks, beforeLabel, afterLabel }: { blocks: SplitBlock[]; beforeLabel: string; afterLabel: string }) {
+  if (blocks.length === 0) return null
+  return (
+    <div className="dsdr-diff-scroll">
+      <div className="dsdr-split">
+        <div className="dsdr-split-head">
+          <div>
+            <span className="dsdr-split-num" aria-hidden="true" />
+            <span>{beforeLabel}</span>
+          </div>
+          <div>
+            <span className="dsdr-split-num" aria-hidden="true" />
+            <span>{afterLabel}</span>
+          </div>
+        </div>
+        {blocks.map((block, bi) => (
+          <div key={bi}>
+            {block.head ? <div className="dsdr-split-hunk">{block.head}</div> : null}
+            {block.rows.map((row, ri) => (
+              <div key={ri} className="dsdr-split-row">
+                <div className={`dsdr-split-cell ${row.leftNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-del' : ''}`}>
+                  <span className="dsdr-split-num">{row.leftNum ?? ''}</span>
+                  <span className="dsdr-split-text">{row.left}</span>
+                </div>
+                <div className={`dsdr-split-cell ${row.rightNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-add' : ''}`}>
+                  <span className="dsdr-split-num">{row.rightNum ?? ''}</span>
+                  <span className="dsdr-split-text">{row.right}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -495,6 +709,20 @@ function DiffReviewAction({ sessionId, useSessions, useSession, t }: DiffReviewA
 function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const storeState = useSyncExternalStore(overlayStore.subscribe, overlayStore.getSnapshot)
   const [tab, setTab] = useState<'session' | 'workspace'>('session')
+  const [view, setView] = useState<ViewMode>(() => {
+    try {
+      return typeof localStorage !== 'undefined' && localStorage.getItem('dsdr-view') === 'split' ? 'split' : 'single'
+    } catch {
+      return 'single'
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('dsdr-view', view)
+    } catch {
+      // private mode / unavailable — non-fatal
+    }
+  }, [view])
 
   // Workspace tab state.
   const [status, setStatus] = useState<StatusResponse | null>(null)
@@ -751,15 +979,20 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                     <div className="dsdr-diff-head">
                       <span className="dsdr-diff-path" title={selectedChange.path}>{selectedChange.path}</span>
                       <span className="dsdr-tool">{selectedChange.tool}</span>
+                      {selectedChange.hasDiff ? <DiffViewToggle view={view} onChange={setView} t={t} /> : null}
                     </div>
                     {selectedChange.hasDiff ? (
-                      <div className="dsdr-diff-scroll">
-                        <pre className="dsdr-pre">
-                          {changeRows(selectedChange).map((row, i) => (
-                            <div key={i} className={`dsdr-line dsdr-line-${row.kind}`}>{row.text || ' '}</div>
-                          ))}
-                        </pre>
-                      </div>
+                      view === 'split' && changeSplitBlocks(selectedChange).length > 0 ? (
+                        <SplitDiff blocks={changeSplitBlocks(selectedChange)} beforeLabel={t('view.before')} afterLabel={t('view.after')} />
+                      ) : (
+                        <div className="dsdr-diff-scroll">
+                          <pre className="dsdr-pre">
+                            {changeRows(selectedChange).map((row, i) => (
+                              <div key={i} className={`dsdr-line dsdr-line-${row.kind}`}>{row.text || ' '}</div>
+                            ))}
+                          </pre>
+                        </div>
+                      )
                     ) : (
                       <div className="dsdr-nodiff">{t('review.noDiffData')}</div>
                     )}
@@ -811,6 +1044,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                     <span className="dsdr-diff-stats">
                       {selectedFile.binary ? t('review.binary') : t('review.changes', { added: selectedFile.added, deleted: selectedFile.deleted })}
                     </span>
+                    <DiffViewToggle view={view} onChange={setView} t={t} />
                     <button type="button" className="dsdr-btn dsdr-btn-primary" disabled={busy} onClick={() => onFileAction('accept', selectedFile.path)}>
                       {t('review.accept')}
                     </button>
@@ -823,13 +1057,17 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                       {confirm === 'file' ? t('review.confirmRevert') : t('review.revert')}
                     </button>
                   </div>
-                  <div className="dsdr-diff-scroll">
-                    <pre className="dsdr-pre">
-                      {gitDiffRows(selectedFile.diff).map((row, i) => (
-                        <div key={i} className={`dsdr-line dsdr-line-${row.kind}`}>{row.text || ' '}</div>
-                      ))}
-                    </pre>
-                  </div>
+                  {view === 'split' && !selectedFile.binary && gitSplitBlocks(selectedFile.diff).length > 0 ? (
+                    <SplitDiff blocks={gitSplitBlocks(selectedFile.diff)} beforeLabel={t('view.before')} afterLabel={t('view.after')} />
+                  ) : (
+                    <div className="dsdr-diff-scroll">
+                      <pre className="dsdr-pre">
+                        {gitDiffRows(selectedFile.diff).map((row, i) => (
+                          <div key={i} className={`dsdr-line dsdr-line-${row.kind}`}>{row.text || ' '}</div>
+                        ))}
+                      </pre>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="dsdr-diff-empty">{t('review.empty')}</div>
