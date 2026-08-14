@@ -681,13 +681,13 @@ const REVIEW_CSS = `
 .dsdr-pr-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-pr-meta{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
 .dsdr-pr-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere}
-.dsdr-dock{display:flex;flex-direction:column;gap:2px;margin-top:6px;padding:6px 10px;background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;box-shadow:var(--dsw-shadow-lv3);font-size:12px;line-height:18px}
+.dsdr-dock{display:flex;flex-direction:column;gap:2px;padding:6px 16px 8px;border-top:1px solid var(--dsw-alias-border-l1);font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary)}
 .dsdr-dock-head{display:flex;align-items:center;gap:6px;min-height:22px}
 .dsdr-dock-icon{display:inline-flex;color:var(--dsw-alias-button-info-fill)}
 .dsdr-dock-count{font-weight:600;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary);white-space:nowrap}
 .dsdr-dock-close{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:0}
 .dsdr-dock-close:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsdr-dock-list{display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--dsw-alias-border-l1);padding-top:4px;margin-top:2px;max-height:168px;overflow-y:auto}
+.dsdr-dock-list{display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--dsw-alias-border-l2);padding-top:4px;margin-top:2px;max-height:168px;overflow-y:auto}
 .dsdr-dock-item{display:flex;flex-direction:column;gap:1px;text-align:left;border:0;background:transparent;border-radius:7px;padding:4px 8px;cursor:pointer;font:inherit}
 .dsdr-dock-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-dock-loc{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono);white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
@@ -733,7 +733,8 @@ const REVIEW_CSS = `
 .dsdr-split-head{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:11px;line-height:18px;color:var(--dsw-alias-label-tertiary);padding:4px 8px;position:sticky;top:0;background:var(--dsw-alias-bg-module-platform)}
 .dsdr-split-head div{display:flex;gap:8px}
 .dsdr-split-hunk{color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-fill-l2);font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:11px;line-height:18px;padding:2px 16px}
-.dsdr-split-row{display:grid;grid-template-columns:1fr 1fr;font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:var(--dsdr-diff-size, 12px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px)}
+.dsdr-split-row{position:relative;display:grid;grid-template-columns:1fr 1fr;font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:var(--dsdr-diff-size, 12px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px)}
+.dsdr-split-cell:hover .dsdr-comment-add,.dsdr-split-row:hover .dsdr-comment-add{visibility:visible}
 .dsdr-split-cell{display:flex;gap:8px;padding:0 8px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
 .dsdr-split-num{flex:none;width:36px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px)}
 .dsdr-split-text{flex:1;min-width:0}
@@ -1357,22 +1358,22 @@ function UnifiedDiff({
                               />
                             </>
                           ) : null}
-                        </div>
-                        {showActions && rowComments.length > 0 && commentPopover === key ? (
-                          <div className="dsdr-comment-pop">
-                            {rowComments.map((comment) => (
-                              <div key={comment.id} className="dsdr-comment-item">
-                                <div className="dsdr-comment-text">{comment.text}</div>
-                                <div className="dsdr-comment-meta">
-                                  <span>{comment.path}</span>
-                                  <button type="button" className="dsdr-btn dsdr-btn-danger" disabled={busy} onClick={() => onDeleteComment?.(comment.id)}>
-                                    {t('comment.delete')}
-                                  </button>
+                          {showActions && rowComments.length > 0 && commentPopover === key ? (
+                            <div className="dsdr-comment-pop">
+                              {rowComments.map((comment) => (
+                                <div key={comment.id} className="dsdr-comment-item">
+                                  <div className="dsdr-comment-text">{comment.text}</div>
+                                  <div className="dsdr-comment-meta">
+                                    <span>{comment.path}</span>
+                                    <button type="button" className="dsdr-btn dsdr-btn-danger" disabled={busy} onClick={() => onDeleteComment?.(comment.id)}>
+                                      {t('comment.delete')}
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
                         {editing ? <CommentEditor text={commentText ?? ''} onText={onCommentText ?? (() => {})} onSave={onSaveComment ?? (() => {})} onCancel={onCancelComment ?? (() => {})} busy={busy} t={t} /> : null}
                       </Fragment>
                     )
@@ -1770,7 +1771,7 @@ function FileTreeView<T>(props: {
 // input box, Codex-style — hover the pill to preview, click send to inject.
 // ---------------------------------------------------------------------------
 
-type DiffReviewComposerDockProps = PropsRuntime<'conversation.input.dock'> & PropsLocale<'diff-review'> & { sessions: ISessions }
+type DiffReviewComposerDockProps = PropsRuntime<'conversation.composer.dock'> & PropsLocale<'diff-review'> & { sessions: ISessions }
 
 function DiffReviewComposerDock({ sessionId, useSessions, sessions, input, t }: DiffReviewComposerDockProps) {
   const cwd = useSessions((s: SessionListState) => s.byId[sessionId]?.cwd)
@@ -2704,22 +2705,6 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               </button>
             </>
           ) : null}
-          {tab === 'workspace' && status?.isRepo && reviewableFiles > 0 ? (
-            <button
-              type="button"
-              className="dsdr-btn dsdr-btn-primary"
-              disabled={busy || reviewing}
-              onClick={() => void onReview()}
-              title={t('review.reviewScope')}
-            >
-              {reviewing ? t('review.reviewing') : t('review.review')}
-            </button>
-          ) : null}
-          {tab === 'workspace' && status?.isRepo && comments.length > 0 ? (
-            <button type="button" className="dsdr-btn" disabled={busy} onClick={openSendPanel}>
-              {t('review.sendToAgent')} ({comments.length})
-            </button>
-          ) : null}
           <button type="button" className="dsdr-btn" aria-label={t('review.close')} onClick={close}>
             <IconX />
           </button>
@@ -3256,37 +3241,37 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                                       {rowFindings.length > 0 && row.rightNum !== null ? <span className={`dsdr-split-finding dsdr-finding-${rowFindings[0].priority}`}>{rowFindings[0].priority}</span> : null}
                                       {commentBtn(rightAnchor, rightComments.length)}
                                     </div>
+                                    {leftComments.length > 0 && commentPopover === leftKey ? (
+                                      <div className="dsdr-comment-pop">
+                                        {leftComments.map((comment) => (
+                                          <div key={comment.id} className="dsdr-comment-item">
+                                            <div className="dsdr-comment-text">{comment.text}</div>
+                                            <div className="dsdr-comment-meta">
+                                              <span>{comment.path}</span>
+                                              <button type="button" className="dsdr-btn dsdr-btn-danger" disabled={busy} onClick={() => void deleteComment(comment.id)}>
+                                                {t('comment.delete')}
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : null}
+                                    {rightComments.length > 0 && commentPopover === rightKey ? (
+                                      <div className="dsdr-comment-pop">
+                                        {rightComments.map((comment) => (
+                                          <div key={comment.id} className="dsdr-comment-item">
+                                            <div className="dsdr-comment-text">{comment.text}</div>
+                                            <div className="dsdr-comment-meta">
+                                              <span>{comment.path}</span>
+                                              <button type="button" className="dsdr-btn dsdr-btn-danger" disabled={busy} onClick={() => void deleteComment(comment.id)}>
+                                                {t('comment.delete')}
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : null}
                                   </div>
-                                  {leftComments.length > 0 && commentPopover === leftKey ? (
-                                    <div className="dsdr-comment-pop">
-                                      {leftComments.map((comment) => (
-                                        <div key={comment.id} className="dsdr-comment-item">
-                                          <div className="dsdr-comment-text">{comment.text}</div>
-                                          <div className="dsdr-comment-meta">
-                                            <span>{comment.path}</span>
-                                            <button type="button" className="dsdr-btn dsdr-btn-danger" disabled={busy} onClick={() => void deleteComment(comment.id)}>
-                                              {t('comment.delete')}
-                                            </button>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : null}
-                                  {rightComments.length > 0 && commentPopover === rightKey ? (
-                                    <div className="dsdr-comment-pop">
-                                      {rightComments.map((comment) => (
-                                        <div key={comment.id} className="dsdr-comment-item">
-                                          <div className="dsdr-comment-text">{comment.text}</div>
-                                          <div className="dsdr-comment-meta">
-                                            <span>{comment.path}</span>
-                                            <button type="button" className="dsdr-btn dsdr-btn-danger" disabled={busy} onClick={() => void deleteComment(comment.id)}>
-                                              {t('comment.delete')}
-                                            </button>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : null}
                                   {commentEditor && (leftKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` || rightKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}`) ? (
                                     <CommentEditor text={commentText} onText={setCommentText} onSave={() => void saveComment()} onCancel={cancelComment} busy={busy} t={t} />
                                   ) : null}
@@ -3392,11 +3377,11 @@ export function apply(ctx: ClientContext): void {
       DiffReviewOverlay,
     ),
   )
-  // Codex-style pending-comments bar above the composer.
-  ctx.slots.inject('conversation.input.dock', () =>
+  // Codex-style pending-comments strip fused INSIDE the composer card (its footer seat).
+  ctx.slots.inject('conversation.composer.dock', () =>
     ctx.slots.register(
       {
-        name: 'conversation.input.dock',
+        name: 'conversation.composer.dock',
         id: 'diff-review-comments-dock',
         order: 20,
         locale: LOCALE_NS,
