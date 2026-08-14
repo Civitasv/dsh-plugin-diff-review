@@ -95,9 +95,9 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 ### 设置：字体与字号
 
-在 **设置 → 插件 → 插件配置 → 变动** 卡片中可修改 diff 的字体与字号，以及 `allowedRoots`（安全边界，在线生效）（等宽 / 系统字体 /
-Consolas / JetBrains Mono / Fira Code / Source Code Pro；字号 11–18px），
-即时生效并持久化。
+在 **设置 → 插件 → 插件配置 → 变动** 卡片中可修改 diff 的字体与字号
+（等宽 / 系统字体 / Consolas / JetBrains Mono / Fira Code / Source Code Pro；
+字号 11–18px），即时生效并持久化。
 
 > 「采纳」只是**暂存**，不会自动 commit —— 在提交框输入说明后点「提交」，
 > 再在「分支与远程」点「推送」。
