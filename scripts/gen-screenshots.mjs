@@ -205,8 +205,7 @@ function workspacePage() {
 }
 
 /** View 2: commit selected — timeline + changed-file tree + commit diff. */
-function commitPage() {
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>:root{${TOKENS}}${COMMON_CSS}</style></head><body>
+function commitPage() {  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>:root{${TOKENS}}${COMMON_CSS}</style></head><body>
 <div class="panel">
   <div class="head">
     <span class="title">变动</span>
@@ -258,6 +257,44 @@ function commitPage() {
 </body></html>`
 }
 
+/** View 3: session tab — rounds with per-round file trees + change diff. */
+function sessionPage() {
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>:root{${TOKENS}}${COMMON_CSS}</style></head><body>
+<div class="panel">
+  <div class="head">
+    <span class="title">变动</span>
+    <span class="tabs"><span class="tab active">会话更改</span><span class="tab">工作区</span></span>
+    <span class="subtitle">4 轮 · 5 个文件</span>
+    <span class="spacer"></span>
+    <span class="btn">✕</span>
+  </div>
+  <div class="body">
+    <div class="files">
+      <div class="section" style="font-weight:600;color:var(--dsw-alias-label-secondary)">第 4 轮 · 实现自动刷新与历史时间线</div>
+      <div class="dir" style="padding-left:8px"><span class="caret">▾</span><span class="name">src</span><span class="count">2</span></div>
+      ${fileRow('src/client/index.tsx', 'index.tsx', 'M', 'm', 'diff', true, 1)}
+      ${fileRow('src/server/index.ts', 'index.ts', 'M', 'm', 'diff', false, 1)}
+      <div class="section" style="font-weight:600;color:var(--dsw-alias-label-secondary)">第 3 轮 · 为提交增加本地历史与 diff</div>
+      <div class="dir" style="padding-left:8px"><span class="caret">▾</span><span class="name">src/shared</span><span class="count">1</span></div>
+      ${fileRow('src/shared/types.ts', 'types.ts', 'M', 'm', 'diff', false, 1)}
+      <div class="section" style="font-weight:600;color:var(--dsw-alias-label-secondary)">第 2 轮 · 支持 Commit 与 Push</div>
+      ${fileRow('README.md', 'README.md', 'M', 'm', 'diff', false, 0)}
+      <div class="section" style="font-weight:600;color:var(--dsw-alias-label-secondary)">第 1 轮 · 左侧改为文件树</div>
+      ${fileRow('package.json', 'package.json', 'M', 'm', 'diff', false, 0)}
+    </div>
+    <div class="diff">
+      <div class="dhead">
+        <span class="dpath">src/client/index.tsx</span>
+        <span class="dstat">str_replace_editor</span>
+        <span class="toggle"><span>单栏</span><span class="on">双栏</span></span>
+      </div>
+      <div class="scroll"><pre class="pre">${diffRows(DIFF_ROWS)}</pre></div>
+    </div>
+  </div>
+</div>
+</body></html>`
+}
+
 function capture(htmlPath, pngPath, tag) {
   const userDataDir = `/tmp/dsh-dr-cs-${tag}`
   spawnSync('rm', ['-rf', userDataDir])
@@ -276,7 +313,7 @@ function capture(htmlPath, pngPath, tag) {
   }
 }
 
-for (const [name, html] of [['workspace', workspacePage()], ['commit', commitPage()]]) {
+for (const [name, html] of [['workspace', workspacePage()], ['commit', commitPage()], ['session', sessionPage()]]) {
   const htmlPath = join(outDir, `${name}.html`)
   const pngPath = join(outDir, `${name}.png`)
   writeFileSync(htmlPath, html)

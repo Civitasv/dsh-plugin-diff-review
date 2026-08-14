@@ -14,6 +14,10 @@
 
 ![提交详情](docs/screenshots/commit.png)
 
+会话更改 —— 按轮列出代理修改的文件（不依赖 git），右侧查看每处修改的 diff：
+
+![会话更改](docs/screenshots/session.png)
+
 ## 特性
 
 ### 工作区（Workspace）— git 工作树
