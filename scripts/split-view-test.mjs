@@ -155,6 +155,57 @@ await scenario('delete', 'alpha\nBETA\nGAMMA\nepsilon\nzeta\n', (rows) => {
   ]
 })
 
+// --- hunksForLines mirror (client helper for the carried review message) ---
+function hunksForLines(diff, lines) {
+  const targets = new Set(lines.filter((l) => l !== null))
+  if (targets.size === 0) return ''
+  const blocks = parseGitBlocks(diff)
+  const parts = []
+  for (const block of blocks) {
+    if (block.head?.kind !== 'hunk') continue
+    const starts = hunkStarts(block.head.text)
+    let oldLine = starts.oldStart
+    let newLine = starts.newStart
+    let oMin = Infinity
+    let oMax = -Infinity
+    let nMin = Infinity
+    let nMax = -Infinity
+    for (const row of block.rows) {
+      if (row.kind === 'ctx') {
+        if (oldLine < oMin) oMin = oldLine
+        if (oldLine > oMax) oMax = oldLine
+        if (newLine < nMin) nMin = newLine
+        if (newLine > nMax) nMax = newLine
+        oldLine++
+        newLine++
+      } else if (row.kind === 'add') {
+        if (newLine < nMin) nMin = newLine
+        if (newLine > nMax) nMax = newLine
+        newLine++
+      } else if (row.kind === 'del') {
+        if (oldLine < oMin) oMin = oldLine
+        if (oldLine > oMax) oMax = oldLine
+        oldLine++
+      }
+    }
+    const hit = [...targets].some((l) => (oMin <= l && l <= oMax) || (nMin <= l && l <= nMax))
+    if (hit) parts.push([block.head.text, ...block.rows.map((r) => r.text)].join('\n'))
+  }
+  return parts.join('\n')
+}
+
+// hunksForLines: a comment on the changed line pulls the covering hunk; a line
+// outside every hunk pulls nothing.
+writeFileSync(join(repo, 'hf.txt'), Array.from({ length: 20 }, (_, i) => `l${i + 1}`).join('\n') + '\n')
+await run(['add', 'hf.txt'])
+await run(['commit', '-q', '-m', 'hf'])
+const hfLines = Array.from({ length: 20 }, (_, i) => (i + 1 === 3 || i + 1 === 17 ? `X${i + 1}` : `l${i + 1}`))
+writeFileSync(join(repo, 'hf.txt'), hfLines.join('\n') + '\n')
+const hfDiff = await run(['diff', '--', 'hf.txt'])
+check('hunksForLines: hits hunk covering line 3', hunksForLines(hfDiff, [3]).includes('X3'))
+check('hunksForLines: hits hunk covering line 17', hunksForLines(hfDiff, [17]).includes('X17'))
+check('hunksForLines: misses gap line 10', hunksForLines(hfDiff, [10]) === '', hunksForLines(hfDiff, [10]).slice(0, 40))
+
 rmSync(repo, { recursive: true, force: true })
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURES`)
 process.exit(failures === 0 ? 0 : 1)

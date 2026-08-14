@@ -66,12 +66,23 @@ const overlayStore = createSnapshotStore<{ open: boolean; cwd: string | null; ke
 
 /**
  * Pending inline comments surfaced above the composer (Codex-style). The
- * review overlay syncs its workspace comments here; the composer dock reads
- * them for the current session's workspace.
+ * review overlay syncs its workspace comments (plus the diff context and the
+ * last AI review result) here; the composer dock reads them and carries a
+ * full review package with the user's next message.
  */
-const pendingCommentsStore = createSnapshotStore<{ cwd: string | null; comments: ReviewComment[] }>({
+interface PendingComments {
+  cwd: string | null
+  comments: ReviewComment[]
+  /** Unified diff text per commented path (context for the carried message). */
+  diffs: Record<string, string>
+  /** Last AI review result (verdict + findings), appended to the carried message. */
+  review: ReviewResponse | null
+}
+const pendingCommentsStore = createSnapshotStore<PendingComments>({
   cwd: null,
   comments: [],
+  diffs: {},
+  review: null,
 })
 
 /** Inject text into a session as a user message; falls back to the clipboard. */
@@ -885,7 +896,7 @@ const zh = {
   'repo.label': '仓库',
   'review.dockComments': '行内评论 {n} 条',
   'review.dockJump': '点击在评审面板中打开对应变更',
-  'review.dockHint': '发送消息时自动附带',
+  'review.dockHint': '随下一条消息自动附带（含 diff 与 AI 评审结论）',
   'settings.title': '变动',
   'settings.font': '字体',
   'settings.size': '字号',
@@ -1009,7 +1020,7 @@ const en: Record<keyof typeof zh, string> = {
   'repo.label': 'Repo',
   'review.dockComments': '{n} inline comments',
   'review.dockJump': 'Open the matching change in the review panel',
-  'review.dockHint': 'Auto-carried with your next message',
+  'review.dockHint': 'Auto-carried with your next message (diff + AI verdict included)',
   'settings.title': 'Changes',
   'settings.font': 'Font',
   'settings.size': 'Font size',
@@ -1161,6 +1172,47 @@ function HunkToolbar({
       </button>
     </div>
   )
+}
+
+/** Hunks of `diff` whose old or new line range covers any of `lines`. */
+function hunksForLines(diff: string, lines: (number | null)[]): string {
+  const targets = new Set(lines.filter((l): l is number => l !== null))
+  if (targets.size === 0) return ''
+  const blocks = parseGitBlocks(diff)
+  const parts: string[] = []
+  for (const block of blocks) {
+    if (block.head?.kind !== 'hunk') continue
+    const starts = hunkStarts(block.head.text)
+    let oldLine = starts.oldStart
+    let newLine = starts.newStart
+    let oMin = Infinity
+    let oMax = -Infinity
+    let nMin = Infinity
+    let nMax = -Infinity
+    for (const row of block.rows) {
+      if (row.kind === 'ctx') {
+        if (oldLine < oMin) oMin = oldLine
+        if (oldLine > oMax) oMax = oldLine
+        if (newLine < nMin) nMin = newLine
+        if (newLine > nMax) nMax = newLine
+        oldLine++
+        newLine++
+      } else if (row.kind === 'add') {
+        if (newLine < nMin) nMin = newLine
+        if (newLine > nMax) nMax = newLine
+        newLine++
+      } else if (row.kind === 'del') {
+        if (oldLine < oMin) oMin = oldLine
+        if (oldLine > oMax) oMax = oldLine
+        oldLine++
+      }
+    }
+    const hit = [...targets].some(
+      (l) => (oMin <= l && l <= oMax) || (nMin <= l && l <= nMax),
+    )
+    if (hit) parts.push([block.head.text, ...block.rows.map((r) => r.text)].join('\n'))
+  }
+  return parts.join('\n')
 }
 
 /** Unified diff rows with old/new line numbers tracked through hunks. */
@@ -1819,20 +1871,49 @@ function DiffReviewComposerDock({ sessionId, useSessions, sessions, input, t }: 
     }
   }, [comments.length])
 
+  /** Compose the full review package: comments + their diff hunks + AI verdict. */
+  const composeCarriedMessage = (): string => {
+    const lines: string[] = ['请处理以下针对当前工作区的行内评审评论（Address the inline comments，保持改动范围最小）：', '']
+    const byPath = new Map<string, ReviewComment[]>()
+    for (const c of comments) {
+      const list = byPath.get(c.path)
+      if (list) list.push(c)
+      else byPath.set(c.path, [c])
+    }
+    for (const [path, list] of byPath) {
+      lines.push(`## ${path}`)
+      for (const c of list) {
+        const anchor = c.lineNew !== null ? `:${c.lineNew}` : ` (old line ${c.lineOld})`
+        lines.push(`- ${path}${anchor}: ${c.text}`)
+      }
+      const hunks = hunksForLines(pending.diffs[path] ?? '', list.map((c) => c.lineNew ?? c.lineOld))
+      if (hunks) {
+        lines.push('```diff')
+        lines.push(hunks)
+        lines.push('```')
+      }
+      lines.push('')
+    }
+    if (pending.review?.ok && (pending.review.findings.length > 0 || pending.review.verdict)) {
+      lines.push('## AI 评审结论')
+      lines.push(pending.review.verdict === 'incorrect' ? '补丁存在问题（Patch is incorrect）' : '补丁正确（Patch is correct）')
+      for (const f of pending.review.findings) {
+        lines.push(`- [${f.priority}] ${f.file}:${f.lineStart}${f.lineEnd !== f.lineStart ? `-${f.lineEnd}` : ''} ${f.title} — ${f.detail}`)
+        if (f.suggestion) lines.push(`  \`\`\`\n${f.suggestion}\n  \`\`\``)
+      }
+    }
+    return lines.join('\n').slice(0, 16000)
+  }
+
   // Codex-style auto-carry: when the user submits a message while comments are
-  // pending, queue the comments right behind it (no send button needed).
+  // pending, queue the full review package right behind it (no send button).
   const phase = input?.phase
   useEffect(() => {
     if (comments.length === 0 || carrying.current || carriedIds.current === ids) return
     if (phase !== 'submitting' && phase !== 'adjudicating') return
     carrying.current = true
     const targetIds = ids
-    const lines: string[] = ['请处理以下针对当前工作区的行内评审评论（Address the inline comments，保持改动范围最小）：', '']
-    for (const c of comments) {
-      const anchor = c.lineNew !== null ? `:${c.lineNew}` : ` (old line ${c.lineOld})`
-      lines.push(`- ${c.path}${anchor}: ${c.text}`)
-    }
-    void injectToSession(sessions, sessionId, lines.join('\n')).then((outcome) => {
+    void injectToSession(sessions, sessionId, composeCarriedMessage()).then((outcome) => {
       if (outcome !== 'failed') carriedIds.current = targetIds
       carrying.current = false
     })
@@ -2064,13 +2145,21 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, activeCwd])
 
-  // Surface workspace comments above the composer (Codex-style dock).
+  // Surface workspace comments above the composer (Codex-style dock), along
+  // with the diff context and the last AI review result.
   useEffect(() => {
     pendingCommentsStore.update((d) => {
       d.cwd = activeCwd ?? null
       d.comments = comments
+      const diffs: Record<string, string> = {}
+      for (const c of comments) {
+        const file = status?.files.find((f) => f.path === c.path)
+        if (file?.diff) diffs[c.path] = file.diff
+      }
+      d.diffs = diffs
+      d.review = review
     })
-  }, [comments, activeCwd])
+  }, [comments, activeCwd, status, review])
 
   // Jump to a change block from the composer dock (comment click).
   useEffect(() => {
