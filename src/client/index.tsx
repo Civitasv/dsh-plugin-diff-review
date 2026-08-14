@@ -264,6 +264,31 @@ export function countSessionChanges(nodes: readonly ConversationNode[]): number 
 // Diff rendering.
 // ---------------------------------------------------------------------------
 
+/** Split one `git show --format=` diff into per-file segments. */
+function splitCommitDiff(diff: string): { path: string; text: string }[] {
+  const segments: { path: string; text: string[] }[] = []
+  let current: { path: string; text: string[] } | null = null
+  for (const line of diff.split('\n')) {
+    const match = /^diff --git a\/(.*?) b\//.exec(line)
+    if (match) {
+      if (current) segments.push(current)
+      current = { path: match[1], text: [line] }
+    } else if (current) {
+      current.text.push(line)
+    }
+  }
+  if (current) segments.push(current)
+  return segments.map((s) => ({ path: s.path, text: s.text.join('\n') }))
+}
+
+/** Status letter for a commit's file, derived from its diff segment text. */
+function commitFileStatus(segmentText: string): string {
+  if (/^new file mode/.test(segmentText)) return 'A'
+  if (/^deleted file mode/.test(segmentText)) return 'D'
+  if (/^rename from /.test(segmentText)) return 'R'
+  return 'M'
+}
+
 type DiffRow = { kind: 'add' | 'del' | 'ctx' | 'hunk' | 'file' | 'note'; text: string }
 
 /** Classify raw unified-diff text (git output) into rows. */
@@ -494,6 +519,8 @@ const REVIEW_CSS = `
 .dsdr-tl-badge-local{background:rgba(46,160,67,.16);color:var(--dsw-alias-state-success-primary)}
 .dsdr-tl-badge-remote{background:var(--dsw-alias-fill-l2);color:var(--dsw-alias-label-tertiary)}
 .dsdr-diff-hash{margin-left:8px;font-size:11px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
+.dsdr-commit-file-head{display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
+.dsdr-commit-file-path{font-family:var(--dsw-font-mono);font-size:12px;color:var(--dsw-alias-label-primary);margin-left:4px}
 .dsdr-body{display:flex;flex:1;min-height:0}
 .dsdr-files{width:300px;flex:none;border-right:1px solid var(--dsw-alias-border-l1);overflow-y:auto;padding:8px}
 .dsdr-round{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);padding:8px 8px 3px;font-weight:600}
@@ -614,6 +641,7 @@ const zh = {
   'review.sectionBranch': '分支与远程',
   'review.noUpstream': '未设置上游分支',
   'review.history': '历史',
+  'review.commitFiles': '变动文件',
   'history.local': '本地',
   'history.remote': '远程',
   'time.now': '刚刚',
@@ -679,6 +707,7 @@ const en: Record<keyof typeof zh, string> = {
   'review.sectionBranch': 'Branch vs remote',
   'review.noUpstream': 'no upstream',
   'review.history': 'History',
+  'review.commitFiles': 'Files',
   'history.local': 'local',
   'history.remote': 'remote',
   'time.now': 'just now',
@@ -1171,6 +1200,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const [selectedCommit, setSelectedCommit] = useState<CommitInfo | null>(null)
   const [commitDiff, setCommitDiff] = useState<CommitDiffResponse | null>(null)
   const [commitDiffLoading, setCommitDiffLoading] = useState(false)
+  const [selectedCommitFile, setSelectedCommitFile] = useState<string | null>(null)
   // Collapsed directories in the left-hand file tree (shared across tabs).
   const [collapsedDirs, setCollapsedDirs] = useState<ReadonlySet<string>>(() => new Set())
   const toggleDir = useMemo(
@@ -1282,12 +1312,23 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   // NOTE: hooks must all run before the early return below (React hook order).
   const stagedTree = useMemo(() => buildFileTree(stagedFiles, (f) => f.path), [stagedFiles])
   const unstagedTree = useMemo(() => buildFileTree(unstagedFiles, (f) => f.path), [unstagedFiles])
+  const commitFilesTree = useMemo(
+    () => (commitDiff?.ok ? buildFileTree(commitDiff.files, (f) => f.path) : []),
+    [commitDiff],
+  )
 
   if (!storeState.open || !cwd) return null
 
   const selectedFile = files.find((f) => f.path === selected) ?? null
   const totalAdded = files.reduce((n, f) => n + f.added, 0)
   const totalDeleted = files.reduce((n, f) => n + f.deleted, 0)
+
+  // Commit-detail view: the selected file within the selected commit.
+  const commitSegments = commitDiff?.ok ? splitCommitDiff(commitDiff.diff) : []
+  const commitActiveFile = selectedCommit && commitDiff?.ok ? commitDiff.files.find((f) => f.path === selectedCommitFile) ?? null : null
+  const commitActiveText = commitActiveFile
+    ? commitSegments.find((s) => s.path === commitActiveFile.path)?.text ?? commitDiff?.diff ?? ''
+    : commitDiff?.diff ?? ''
 
   /** Leaf row shared by the staged/unstaged file trees. */
   const workspaceLeaf = ({ item: file, name }: { item: DiffFile; name: string }) => (
@@ -1299,6 +1340,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       onClick={() => {
         setSelected(file.path)
         setSelectedCommit(null)
+        setSelectedCommitFile(null)
         setCommitDiff(null)
         setConfirm(null)
       }}
@@ -1409,6 +1451,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const selectCommit = (commit: CommitInfo) => {
     setSelected(null)
     setSelectedCommit(commit)
+    setSelectedCommitFile(null)
     setConfirm(null)
     setCommitDiff(null)
     setCommitDiffLoading(true)
@@ -1416,6 +1459,8 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       .then((d) => {
         setCommitDiff(d)
         setCommitDiffLoading(false)
+        // Default the file tree to the first changed file.
+        if (d.ok && d.files.length > 0) setSelectedCommitFile(d.files[0].path)
       })
       .catch(() => setCommitDiffLoading(false))
   }
@@ -1670,6 +1715,32 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                   </div>
                 </>
               ) : null}
+              {selectedCommit && commitDiff?.ok && commitDiff.files.length > 0 ? (
+                <>
+                  <div className="dsdr-section">{t('review.commitFiles')} ({commitDiff.files.length})</div>
+                  <FileTreeView
+                    nodes={commitFilesTree}
+                    collapsed={collapsedDirs}
+                    onToggleDir={toggleDir}
+                    depth={0}
+                    renderLeaf={({ item: file, name }) => (
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={selectedCommitFile === file.path}
+                        className={`dsdr-file${selectedCommitFile === file.path ? ' dsdr-file-selected' : ''}`}
+                        onClick={() => setSelectedCommitFile(file.path)}
+                      >
+                        <span className="dsdr-chip dsdr-chip-m">{file.status}</span>
+                        <span className="dsdr-file-name" title={file.path}>{name}</span>
+                        <span className="dsdr-file-stat">
+                          {t('review.changes', { added: file.added, deleted: file.deleted })}
+                        </span>
+                      </button>
+                    )}
+                  />
+                </>
+              ) : null}
               <div className="dsdr-section">{t('review.sectionBranch')}</div>
               <div className="dsdr-branch">
                 <span className="dsdr-branch-ref" title={status.upstream ?? undefined}>
@@ -1711,12 +1782,23 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                       </span>
                       <DiffViewToggle view={view} onChange={setView} t={t} />
                     </div>
-                    {view === 'split' && gitSplitBlocks(commitDiff.diff).length > 0 ? (
-                      <SplitDiff blocks={gitSplitBlocks(commitDiff.diff)} beforeLabel={t('view.before')} afterLabel={t('view.after')} />
+                    {commitActiveFile ? (
+                      <div className="dsdr-commit-file-head">
+                        <span className="dsdr-diff-path" title={commitActiveFile.path}>
+                          <span className="dsdr-chip dsdr-chip-m">{commitFileStatus(commitSegments.find((s) => s.path === commitActiveFile.path)?.text ?? '')}</span>
+                          <span className="dsdr-commit-file-path">{commitActiveFile.path}</span>
+                        </span>
+                        <span className="dsdr-diff-stats">
+                          {t('review.changes', { added: commitActiveFile.added, deleted: commitActiveFile.deleted })}
+                        </span>
+                      </div>
+                    ) : null}
+                    {view === 'split' && gitSplitBlocks(commitActiveText).length > 0 ? (
+                      <SplitDiff blocks={gitSplitBlocks(commitActiveText)} beforeLabel={t('view.before')} afterLabel={t('view.after')} />
                     ) : (
                       <div className="dsdr-diff-scroll">
                         <pre className="dsdr-pre">
-                          {gitDiffRows(commitDiff.diff).map((row, i) => (
+                          {gitDiffRows(commitActiveText).map((row, i) => (
                             <div key={i} className={`dsdr-line dsdr-line-${row.kind}`}>{row.text || ' '}</div>
                           ))}
                         </pre>
