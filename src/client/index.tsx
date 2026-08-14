@@ -18,7 +18,7 @@
  * overlay registration's inject face).
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactElement, ReactNode } from 'react'
 import { diffLines } from 'diff'
 import type { ClientContext, ISessions, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -465,6 +465,11 @@ const REVIEW_CSS = `
 .dsdr-file{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;border-radius:8px;padding:6px 8px;cursor:pointer;border:0;background:transparent;text-align:left;font:inherit;color:var(--dsw-alias-label-primary)}
 .dsdr-file:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-file-selected{background:var(--dsw-alias-interactive-bg-hover)}
+.dsdr-dir{display:flex;align-items:center;gap:5px;width:100%;box-sizing:border-box;border-radius:7px;padding:5px 8px;cursor:pointer;border:0;background:transparent;text-align:left;font:inherit;color:var(--dsw-alias-label-secondary);font-size:12px}
+.dsdr-dir:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsdr-dir-caret{flex:none;width:12px;text-align:center;font-size:10px;color:var(--dsw-alias-label-tertiary)}
+.dsdr-dir-name{flex:1;min-width:0;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-weight:600}
+.dsdr-dir-count{flex:none;font-size:10px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
 .dsdr-file-name{flex:1;min-width:0;font-size:12px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-family:var(--dsw-font-mono)}
 .dsdr-file-stat{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
 .dsdr-chip{flex:none;min-width:22px;text-align:center;border-radius:5px;font-size:11px;line-height:16px;padding:0 4px;font-family:var(--dsw-font-mono)}
@@ -538,11 +543,11 @@ if (typeof document !== 'undefined' && document.querySelector(`style[data-plugin
 
 /** Simplified Chinese dictionary (key-set source of truth). */
 const zh = {
-  'action.label': 'Diff 审查',
+  'action.label': '变动',
   'action.aria': '审查当前项目与每轮修改',
   'tab.session': '会话更改',
   'tab.workspace': '工作区',
-  'review.title': 'Diff 审查',
+  'review.title': '变动',
   'review.branch': '分支',
   'review.detached': '游离 HEAD',
   'review.notRepo': '当前目录不是 git 仓库',
@@ -573,7 +578,7 @@ const zh = {
   'view.split': '双栏',
   'view.before': '原文件',
   'view.after': '新文件',
-  'settings.title': 'Diff 审查',
+  'settings.title': '变动',
   'settings.font': '字体',
   'settings.size': '字号',
   'font.mono': '等宽（默认）',
@@ -582,11 +587,11 @@ const zh = {
 
 /** English dictionary, checked complete against the zh key set. */
 const en: Record<keyof typeof zh, string> = {
-  'action.label': 'Diff Review',
+  'action.label': 'Changes',
   'action.aria': 'Review workspace and per-round changes',
   'tab.session': 'Session',
   'tab.workspace': 'Workspace',
-  'review.title': 'Diff Review',
+  'review.title': 'Changes',
   'review.branch': 'branch',
   'review.detached': 'detached HEAD',
   'review.notRepo': 'This directory is not a git repository',
@@ -617,7 +622,7 @@ const en: Record<keyof typeof zh, string> = {
   'view.split': 'Split',
   'view.before': 'Before',
   'view.after': 'After',
-  'settings.title': 'Diff Review',
+  'settings.title': 'Changes',
   'settings.font': 'Font',
   'settings.size': 'Font size',
   'font.mono': 'Monospace (default)',
@@ -939,6 +944,85 @@ function DiffReviewAction({ sessionId, useSessions, useSession, t }: DiffReviewA
 }
 
 // ---------------------------------------------------------------------------
+// File tree: build a directory tree from flat paths and render it with
+// collapsible folders (the left side of the review surface).
+// ---------------------------------------------------------------------------
+
+type TreeDir<T> = { kind: 'dir'; name: string; path: string; children: TreeNode<T>[] }
+type TreeLeaf<T> = { kind: 'leaf'; name: string; path: string; item: T }
+type TreeNode<T> = TreeDir<T> | TreeLeaf<T>
+
+/** Turn a flat item list into a sorted directory tree (directories first). */
+function buildFileTree<T>(items: readonly T[], pathOf: (item: T) => string): TreeNode<T>[] {
+  const root: TreeNode<T>[] = []
+  const dirIndex = new Map<string, TreeDir<T>>()
+  for (const item of items) {
+    const path = pathOf(item)
+    const parts = path.split('/').filter(Boolean)
+    if (parts.length === 0) continue
+    let siblings = root
+    let prefix = ''
+    for (let i = 0; i < parts.length - 1; i++) {
+      prefix = prefix ? `${prefix}/${parts[i]}` : parts[i]
+      let dir = dirIndex.get(prefix)
+      if (!dir) {
+        dir = { kind: 'dir', name: parts[i], path: prefix, children: [] }
+        dirIndex.set(prefix, dir)
+        siblings.push(dir)
+      }
+      siblings = dir.children
+    }
+    siblings.push({ kind: 'leaf', name: parts[parts.length - 1], path, item })
+  }
+  const sortNodes = (nodes: TreeNode<T>[]): void => {
+    nodes.sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'dir' ? -1 : 1
+      return a.name.localeCompare(b.name)
+    })
+    for (const node of nodes) if (node.kind === 'dir') sortNodes(node.children)
+  }
+  sortNodes(root)
+  return root
+}
+
+/** Recursive tree renderer: collapsible directories + leaf rows. */
+function FileTreeView<T>(props: {
+  nodes: TreeNode<T>[]
+  collapsed: ReadonlySet<string>
+  onToggleDir: (path: string) => void
+  depth: number
+  renderLeaf: (leaf: TreeLeaf<T>) => ReactNode
+}): ReactElement {
+  const { nodes, collapsed, onToggleDir, depth, renderLeaf } = props
+  return (
+    <>
+      {nodes.map((node) =>
+        node.kind === 'dir' ? (
+          <div key={node.path}>
+            <button
+              type="button"
+              className={`dsdr-dir${collapsed.has(node.path) ? '' : ' dsdr-dir-open'}`}
+              style={{ paddingLeft: depth * 14 + 8 }}
+              aria-expanded={!collapsed.has(node.path)}
+              onClick={() => onToggleDir(node.path)}
+            >
+              <span className="dsdr-dir-caret" aria-hidden="true">{collapsed.has(node.path) ? '▸' : '▾'}</span>
+              <span className="dsdr-dir-name" title={node.path}>{node.name}</span>
+              <span className="dsdr-dir-count">{node.children.length}</span>
+            </button>
+            {!collapsed.has(node.path) ? (
+              <FileTreeView nodes={node.children} collapsed={collapsed} onToggleDir={onToggleDir} depth={depth + 1} renderLeaf={renderLeaf} />
+            ) : null}
+          </div>
+        ) : (
+          <div key={node.path} style={{ paddingLeft: depth * 14 }}>{renderLeaf(node)}</div>
+        ),
+      )}
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Review overlay (root scope): session + workspace tabs.
 // ---------------------------------------------------------------------------
 
@@ -969,6 +1053,19 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [confirm, setConfirm] = useState<'file' | 'all' | null>(null)
+  // Collapsed directories in the left-hand file tree (shared across tabs).
+  const [collapsedDirs, setCollapsedDirs] = useState<ReadonlySet<string>>(() => new Set())
+  const toggleDir = useMemo(
+    () => (path: string) => {
+      setCollapsedDirs((prev) => {
+        const next = new Set(prev)
+        if (next.has(path)) next.delete(path)
+        else next.add(path)
+        return next
+      })
+    },
+    [],
+  )
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   // Current session's conversation snapshot (reactive), for the session tab.
@@ -993,6 +1090,9 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   )
 
   const rounds = useMemo(() => (snapshot ? collectSessionRounds(snapshot.nodes) : []), [snapshot])
+  // Left-hand file trees: per-round trees for the session tab, one tree for
+  // the git working tree on the workspace tab.
+  const sessionTrees = useMemo(() => new Map(rounds.map((r) => [r.round, buildFileTree(r.changes, (c) => c.path)])), [rounds])
   const totalSessionFiles = useMemo(() => rounds.reduce((n, r) => n + r.changes.length, 0), [rounds])
   const [selectedRound, setSelectedRound] = useState<number | null>(null)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
@@ -1056,9 +1156,12 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     return () => clearTimeout(noticeTimer.current)
   }, [notice])
 
+  const files = status?.isRepo ? status.files : []
+  // NOTE: hooks must all run before the early return below (React hook order).
+  const workspaceTree = useMemo(() => buildFileTree(files, (f) => f.path), [files])
+
   if (!storeState.open || !cwd) return null
 
-  const files = status?.isRepo ? status.files : []
   const selectedFile = files.find((f) => f.path === selected) ?? null
   const totalAdded = files.reduce((n, f) => n + f.added, 0)
   const totalDeleted = files.reduce((n, f) => n + f.deleted, 0)
@@ -1216,28 +1319,33 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                       {t('review.round', { round: round.round })}
                       {round.label ? <div className="dsdr-round-label" title={round.label}>{round.label}</div> : null}
                     </div>
-                    {round.changes.map((change) => {
-                      const key = `${round.round}:${change.path}`
-                      const selectedKey = selectedChange ? `${selectedRound}:${selectedChange.path}` : null
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          role="option"
-                          aria-selected={key === selectedKey}
-                          className={`dsdr-file${key === selectedKey ? ' dsdr-file-selected' : ''}`}
-                          onClick={() => {
-                            setSelectedRound(round.round)
-                            setSelectedPath(change.path)
-                            setConfirm(null)
-                          }}
-                        >
-                          <span className={`dsdr-chip ${change.hasDiff ? 'dsdr-chip-m' : 'dsdr-chip-u'}`}>{change.hasDiff ? 'M' : '·'}</span>
-                          <span className="dsdr-file-name" title={change.path}>{change.path}</span>
-                          <span className="dsdr-tool" title={change.tool}>{change.tool}</span>
-                        </button>
-                      )
-                    })}
+                    <FileTreeView
+                      nodes={sessionTrees.get(round.round) ?? []}
+                      collapsed={collapsedDirs}
+                      onToggleDir={toggleDir}
+                      depth={0}
+                      renderLeaf={({ item: change }) => {
+                        const key = `${round.round}:${change.path}`
+                        const selectedKey = selectedChange ? `${selectedRound}:${selectedChange.path}` : null
+                        return (
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={key === selectedKey}
+                            className={`dsdr-file${key === selectedKey ? ' dsdr-file-selected' : ''}`}
+                            onClick={() => {
+                              setSelectedRound(round.round)
+                              setSelectedPath(change.path)
+                              setConfirm(null)
+                            }}
+                          >
+                            <span className={`dsdr-chip ${change.hasDiff ? 'dsdr-chip-m' : 'dsdr-chip-u'}`}>{change.hasDiff ? 'M' : '·'}</span>
+                            <span className="dsdr-file-name" title={change.path}>{change.path}</span>
+                            <span className="dsdr-tool" title={change.tool}>{change.tool}</span>
+                          </button>
+                        )
+                      }}
+                    />
                   </div>
                 ))}
               </div>
@@ -1281,25 +1389,30 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
         ) : status?.isRepo && files.length > 0 ? (
           <div className="dsdr-body">
             <div className="dsdr-files" role="listbox" aria-label={t('tab.workspace')}>
-              {files.map((file) => (
-                <button
-                  key={file.path}
-                  type="button"
-                  role="option"
-                  aria-selected={file.path === selected}
-                  className={`dsdr-file${file.path === selected ? ' dsdr-file-selected' : ''}`}
-                  onClick={() => {
-                    setSelected(file.path)
-                    setConfirm(null)
-                  }}
-                >
-                  <span className={`dsdr-chip ${chipClass(file.status)}`}>{file.untracked ? '??' : file.status}</span>
-                  <span className="dsdr-file-name" title={file.path}>{file.path}</span>
-                  <span className="dsdr-file-stat">
-                    {file.binary ? t('review.binary') : t('review.changes', { added: file.added, deleted: file.deleted })}
-                  </span>
-                </button>
-              ))}
+              <FileTreeView
+                nodes={workspaceTree}
+                collapsed={collapsedDirs}
+                onToggleDir={toggleDir}
+                depth={0}
+                renderLeaf={({ item: file }) => (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={file.path === selected}
+                    className={`dsdr-file${file.path === selected ? ' dsdr-file-selected' : ''}`}
+                    onClick={() => {
+                      setSelected(file.path)
+                      setConfirm(null)
+                    }}
+                  >
+                    <span className={`dsdr-chip ${chipClass(file.status)}`}>{file.untracked ? '??' : file.status}</span>
+                    <span className="dsdr-file-name" title={file.path}>{file.path}</span>
+                    <span className="dsdr-file-stat">
+                      {file.binary ? t('review.binary') : t('review.changes', { added: file.added, deleted: file.deleted })}
+                    </span>
+                  </button>
+                )}
+              />
             </div>
             <div className="dsdr-diff">
               {selectedFile ? (
