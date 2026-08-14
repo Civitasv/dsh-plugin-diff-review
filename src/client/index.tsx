@@ -760,15 +760,6 @@ function IconX() {
   )
 }
 
-function IconRefresh() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-      <path d="M21 3v5h-5" />
-    </svg>
-  )
-}
-
 function IconChevronDown() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1268,15 +1259,33 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     }
   }
 
-  // Load workspace status lazily on first visit of the tab.
-  const workspaceLoaded = useRef(false)
+  // Auto-refresh the workspace data: reload whenever the tab becomes active or
+  // the workspace changes, and periodically while the overlay is open. A
+  // workspace switch clears stale commit selection and history first.
+  const workspaceCwdRef = useRef<string | null>(null)
   useEffect(() => {
-    if (tab === 'workspace' && !workspaceLoaded.current && cwd) {
-      workspaceLoaded.current = true
-      void loadWorkspace()
+    const previous = workspaceCwdRef.current
+    workspaceCwdRef.current = cwd ?? null
+    if (tab !== 'workspace' || !cwd) return
+    if (previous !== cwd) {
+      setSelectedCommit(null)
+      setCommitDiff(null)
+      setSelectedCommitFile(null)
+      setHistory([])
     }
+    void loadWorkspace()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, cwd])
+
+  // Keep staged/unstaged/history fresh while the workspace tab is open.
+  useEffect(() => {
+    if (!storeState.open || tab !== 'workspace' || !cwd) return
+    const timer = setInterval(() => {
+      void loadWorkspace(true)
+    }, 15000)
+    return () => clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeState.open, tab, cwd])
 
   // Default selection for the session tab follows the first round with changes.
   useEffect(() => {
@@ -1566,10 +1575,6 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               />
               <button type="button" className="dsdr-btn" disabled={busy || !commitMessage.trim() || stagedCount === 0} onClick={() => void onCommit()}>
                 {t('review.commit')}
-              </button>
-              <button type="button" className="dsdr-btn" disabled={busy} onClick={() => void loadWorkspace()}>
-                <IconRefresh />
-                {t('review.refresh')}
               </button>
             </>
           ) : null}
