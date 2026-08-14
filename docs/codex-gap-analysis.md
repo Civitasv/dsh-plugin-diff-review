@@ -383,8 +383,9 @@ config:
    （文件级采纳/丢弃不受影响）。
 4. ~~`revert all` 未跟踪删除无反馈~~ **已修**：`ApplyResponse` 新增 `deleted[]`，
    客户端提示「已… N 个文件（删除 M 个未跟踪文件）」。
-5. **行内评论只在单栏视图可用**（保留）：split 视图已支持评审发现高亮 + 行打开，
-   评论交互仍限单栏；评论锚定 `(path, lineNew, lineOld)`，行号失效时静默不显示。
+5. ~~行内评论只在单栏视图可用~~ **已修**：split 视图左右单元格均可加评论（锚定与
+   单栏一致：上下文行两侧同锚、变更行按各自侧）；hover 按钮改 visibility 占位，
+   不再导致行高跳动。评论锚定 `(path, lineNew, lineOld)`，行号失效时静默不显示。
 6. **`git apply` 的 hunk-only 补丁有坑（已绕开）**：`git apply --reverse` 对
    「变更行位于 hunk 末尾、目标文件在该 hunk 之后还有内容」的补丁会报
    "patch does not apply"（与上下文行数/位置相关，实测确认）。工作区侧丢弃因此

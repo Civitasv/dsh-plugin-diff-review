@@ -602,10 +602,10 @@ const REVIEW_CSS = `
 .dsdr-line{display:flex;align-items:flex-start;gap:10px;padding:0 16px;color:var(--dsw-alias-label-primary);position:relative}
 .dsdr-line-num{flex:none;width:34px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);opacity:.75}
 .dsdr-line-text{flex:1;min-width:0;white-space:pre}
-.dsdr-comment-add{flex:none;display:none;align-items:center;justify-content:center;width:18px;height:18px;border-radius:6px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:11px;line-height:1;padding:0;margin-top:1px}
-.dsdr-line:hover .dsdr-comment-add{display:flex}
+.dsdr-comment-add{flex:none;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:6px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:11px;line-height:1;padding:0;margin-top:1px;visibility:hidden}
+.dsdr-line:hover .dsdr-comment-add,.dsdr-comment-add:focus-visible{visibility:visible}
 .dsdr-comment-add:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-label-dimmed)}
-.dsdr-comment-has{display:flex;background:rgba(88,166,255,.18);color:#58a6ff;border-color:transparent;font-variant-numeric:tabular-nums}
+.dsdr-comment-has{visibility:visible;background:rgba(88,166,255,.18);color:#58a6ff;border-color:transparent;font-variant-numeric:tabular-nums}
 .dsdr-line-commented{box-shadow:inset 3px 0 0 rgba(88,166,255,.7)}
 .dsdr-comment-editor{display:flex;flex-direction:column;gap:6px;padding:8px 16px;border-top:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2)}
 .dsdr-comment-input{box-sizing:border-box;width:100%;min-height:52px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);padding:6px 8px;font:inherit;font-size:12px;line-height:18px;resize:vertical}
@@ -617,8 +617,8 @@ const REVIEW_CSS = `
 .dsdr-comment-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--dsw-font-mono)}
 .dsdr-comment-meta{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
 .dsdr-comment-meta .dsdr-btn{min-height:20px;padding:0 6px;font-size:10px;line-height:14px;margin-left:auto}
-.dsdr-openline{flex:none;display:none;align-items:center;justify-content:center;width:18px;height:18px;border:0;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:12px;line-height:1;padding:0}
-.dsdr-line:hover .dsdr-openline{display:flex}
+.dsdr-openline{flex:none;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border:0;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:12px;line-height:1;padding:0;visibility:hidden}
+.dsdr-line:hover .dsdr-openline,.dsdr-openline:focus-visible{visibility:visible}
 .dsdr-openline:hover{color:var(--dsw-alias-label-primary)}
 .dsdr-line-finding{box-shadow:inset 3px 0 0 var(--dsdr-finding-color, rgba(255,166,87,.7))}
 .dsdr-finding-P0{--dsdr-finding-color:#f85149}
@@ -702,8 +702,8 @@ const REVIEW_CSS = `
 .dsdr-split-finding.dsdr-finding-P1{background:rgba(255,166,87,.16);color:#ffa657}
 .dsdr-split-finding.dsdr-finding-P2{background:rgba(210,153,34,.16);color:#d29922}
 .dsdr-split-finding.dsdr-finding-P3{background:var(--dsw-alias-fill-l2);color:var(--dsw-alias-label-tertiary)}
-.dsdr-split-openline{flex:none;display:none;align-items:center;justify-content:center;width:16px;height:16px;border:0;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:11px;line-height:1;padding:0}
-.dsdr-split-cell:hover .dsdr-split-openline{display:flex}
+.dsdr-split-openline{flex:none;display:flex;align-items:center;justify-content:center;width:16px;height:16px;border:0;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:11px;line-height:1;padding:0;visibility:hidden}
+.dsdr-split-cell:hover .dsdr-split-openline,.dsdr-split-openline:focus-visible{visibility:visible}
 .dsdr-split-openline:hover{color:var(--dsw-alias-label-primary)}
 .dsdr-cell-add{background:rgba(46,160,67,.13)}
 .dsdr-cell-del{background:rgba(248,81,73,.12)}
@@ -799,6 +799,7 @@ const zh = {
   'scope.commit': '提交',
   'scope.branch': '分支',
   'scope.last-turn': '最后一轮',
+  'review.lastTurnEmpty': '最后一轮没有记录到文件修改 —— 终端命令（bash）改文件不会计入会话记录；可切到「全部」查看 git 变更',
   'scope.base': '基线分支',
   'scope.branchReadonly': '分支范围只读（对比 merge-base，不提供采纳/丢弃）',
   'review.selectCommit': '从左侧选择提交查看 diff',
@@ -919,6 +920,7 @@ const en: Record<keyof typeof zh, string> = {
   'scope.commit': 'Commit',
   'scope.branch': 'Branch',
   'scope.last-turn': 'Last turn',
+  'review.lastTurnEmpty': 'No file changes recorded for the last turn — terminal commands (bash) that edit files are not tracked in the session log; switch to "All" to see git changes',
   'scope.base': 'Base branch',
   'scope.branchReadonly': 'Branch scope is read-only (merge-base diff; no accept/revert)',
   'review.selectCommit': 'Select a commit from the left to view its diff',
@@ -1988,7 +1990,17 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       case 'branch':
         return baseStatus?.files ?? []
       case 'last-turn':
-        return lastRoundPaths.size > 0 ? files.filter((f) => lastRoundPaths.has(f.path) || lastRoundPaths.has(baseName(f.path))) : []
+        if (lastRoundPaths.size === 0) return []
+        return files.filter((f) => {
+          if (lastRoundPaths.has(f.path) || lastRoundPaths.has(baseName(f.path))) return true
+          // Session paths may be workspace-root relative or absolute (the repo can
+          // be a subdirectory of the workspace) — match any suffix form.
+          const suffix = `/${f.path}`
+          for (const p of lastRoundPaths) {
+            if (p.endsWith(suffix)) return true
+          }
+          return false
+        })
       default:
         return files
     }
@@ -2795,7 +2807,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                     />
                   </>
                 ) : (
-                  <div className="dsdr-empty">{t('review.noSessionChanges')}</div>
+                  <div className="dsdr-empty">{t('review.lastTurnEmpty')}</div>
                 )
               ) : null}
               {(scope === 'all' || scope === 'commit') && history.length > 0 ? (
@@ -3017,27 +3029,85 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                               )
                               const findingCls = rowFindings.length > 0 ? ` dsdr-cell-finding dsdr-finding-${rowFindings[0].priority}` : ''
                               const jumped = jumpLine != null && (row.rightNum === jumpLine || (row.rightNum === null && row.leftNum === jumpLine))
+                              // Comment anchors stay consistent with the unified view: ctx rows expose
+                              // both line numbers, change rows expose the side they belong to.
+                              const leftAnchor = { oldLine: row.leftNum, newLine: row.kind === 'ctx' && row.leftNum !== null ? row.leftNum : null }
+                              const rightAnchor = { oldLine: row.kind === 'ctx' && row.rightNum !== null ? row.rightNum : null, newLine: row.rightNum }
+                              const leftKey = `${leftAnchor.oldLine ?? 'o'}:${leftAnchor.newLine ?? 'n'}`
+                              const rightKey = `${rightAnchor.oldLine ?? 'o'}:${rightAnchor.newLine ?? 'n'}`
+                              const leftComments = comments.filter((c) => commentMatches(c, leftAnchor.oldLine, leftAnchor.newLine))
+                              const rightComments = comments.filter((c) => commentMatches(c, rightAnchor.oldLine, rightAnchor.newLine))
                               const openBtn = (line: number) =>
                                 selectedFile.path ? (
                                   <button type="button" className="dsdr-split-openline" title={t('editor.openLine')} aria-label={t('editor.openLine')} onClick={() => void openFile(selectedFile.path, line)}>
                                     ↗
                                   </button>
                                 ) : null
+                              const commentBtn = (anchor: { oldLine: number | null; newLine: number | null }, count: number) => (
+                                <CommentLine
+                                  count={count}
+                                  open={commentPopover === `${anchor.oldLine ?? 'o'}:${anchor.newLine ?? 'n'}`}
+                                  onOpen={() => {
+                                    setCommentEditor({ oldLine: anchor.oldLine, newLine: anchor.newLine })
+                                    setCommentText('')
+                                    setCommentPopover(null)
+                                  }}
+                                  onToggle={() => setCommentPopover((prev) => (prev === `${anchor.oldLine ?? 'o'}:${anchor.newLine ?? 'n'}` ? null : `${anchor.oldLine ?? 'o'}:${anchor.newLine ?? 'n'}`))}
+                                  t={t}
+                                />
+                              )
                               return (
-                                <div key={ri} className="dsdr-split-row">
-                                  <div className={`dsdr-split-cell ${row.leftNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-del' : ''}${findingCls}${jumped ? ' dsdr-cell-jump' : ''}`}>
-                                    <span className="dsdr-split-num">{row.leftNum ?? ''}</span>
-                                    <span className="dsdr-split-text">{row.left}</span>
-                                    {row.leftNum !== null ? openBtn(row.leftNum) : null}
-                                    {rowFindings.length > 0 && row.rightNum === null ? <span className={`dsdr-split-finding dsdr-finding-${rowFindings[0].priority}`}>{rowFindings[0].priority}</span> : null}
+                                <Fragment key={ri}>
+                                  <div className="dsdr-split-row">
+                                    <div className={`dsdr-split-cell ${row.leftNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-del' : ''}${findingCls}${jumped ? ' dsdr-cell-jump' : ''}`}>
+                                      <span className="dsdr-split-num">{row.leftNum ?? ''}</span>
+                                      <span className="dsdr-split-text">{row.left}</span>
+                                      {row.leftNum !== null ? openBtn(row.leftNum) : null}
+                                      {rowFindings.length > 0 && row.rightNum === null ? <span className={`dsdr-split-finding dsdr-finding-${rowFindings[0].priority}`}>{rowFindings[0].priority}</span> : null}
+                                      {commentBtn(leftAnchor, leftComments.length)}
+                                    </div>
+                                    <div className={`dsdr-split-cell ${row.rightNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-add' : ''}${findingCls}${jumped ? ' dsdr-cell-jump' : ''}`}>
+                                      <span className="dsdr-split-num">{row.rightNum ?? ''}</span>
+                                      <span className="dsdr-split-text">{row.right}</span>
+                                      {row.rightNum !== null ? openBtn(row.rightNum) : null}
+                                      {rowFindings.length > 0 && row.rightNum !== null ? <span className={`dsdr-split-finding dsdr-finding-${rowFindings[0].priority}`}>{rowFindings[0].priority}</span> : null}
+                                      {commentBtn(rightAnchor, rightComments.length)}
+                                    </div>
                                   </div>
-                                  <div className={`dsdr-split-cell ${row.rightNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-add' : ''}${findingCls}${jumped ? ' dsdr-cell-jump' : ''}`}>
-                                    <span className="dsdr-split-num">{row.rightNum ?? ''}</span>
-                                    <span className="dsdr-split-text">{row.right}</span>
-                                    {row.rightNum !== null ? openBtn(row.rightNum) : null}
-                                    {rowFindings.length > 0 && row.rightNum !== null ? <span className={`dsdr-split-finding dsdr-finding-${rowFindings[0].priority}`}>{rowFindings[0].priority}</span> : null}
-                                  </div>
-                                </div>
+                                  {leftComments.length > 0 && commentPopover === leftKey ? (
+                                    <div className="dsdr-comment-pop">
+                                      {leftComments.map((comment) => (
+                                        <div key={comment.id} className="dsdr-comment-item">
+                                          <div className="dsdr-comment-text">{comment.text}</div>
+                                          <div className="dsdr-comment-meta">
+                                            <span>{comment.path}</span>
+                                            <button type="button" className="dsdr-btn dsdr-btn-danger" disabled={busy} onClick={() => void deleteComment(comment.id)}>
+                                              {t('comment.delete')}
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                  {rightComments.length > 0 && commentPopover === rightKey ? (
+                                    <div className="dsdr-comment-pop">
+                                      {rightComments.map((comment) => (
+                                        <div key={comment.id} className="dsdr-comment-item">
+                                          <div className="dsdr-comment-text">{comment.text}</div>
+                                          <div className="dsdr-comment-meta">
+                                            <span>{comment.path}</span>
+                                            <button type="button" className="dsdr-btn dsdr-btn-danger" disabled={busy} onClick={() => void deleteComment(comment.id)}>
+                                              {t('comment.delete')}
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                  {commentEditor && (leftKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` || rightKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}`) ? (
+                                    <CommentEditor text={commentText} onText={setCommentText} onSave={() => void saveComment()} onCancel={cancelComment} busy={busy} t={t} />
+                                  ) : null}
+                                </Fragment>
                               )
                             })}
                           </Fragment>
