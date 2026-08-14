@@ -1324,7 +1324,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                       collapsed={collapsedDirs}
                       onToggleDir={toggleDir}
                       depth={0}
-                      renderLeaf={({ item: change }) => {
+                      renderLeaf={({ item: change, name }) => {
                         const key = `${round.round}:${change.path}`
                         const selectedKey = selectedChange ? `${selectedRound}:${selectedChange.path}` : null
                         return (
@@ -1340,7 +1340,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                             }}
                           >
                             <span className={`dsdr-chip ${change.hasDiff ? 'dsdr-chip-m' : 'dsdr-chip-u'}`}>{change.hasDiff ? 'M' : '·'}</span>
-                            <span className="dsdr-file-name" title={change.path}>{change.path}</span>
+                            <span className="dsdr-file-name" title={change.path}>{name}</span>
                             <span className="dsdr-tool" title={change.tool}>{change.tool}</span>
                           </button>
                         )
@@ -1394,7 +1394,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                 collapsed={collapsedDirs}
                 onToggleDir={toggleDir}
                 depth={0}
-                renderLeaf={({ item: file }) => (
+                renderLeaf={({ item: file, name }) => (
                   <button
                     type="button"
                     role="option"
@@ -1406,7 +1406,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                     }}
                   >
                     <span className={`dsdr-chip ${chipClass(file.status)}`}>{file.untracked ? '??' : file.status}</span>
-                    <span className="dsdr-file-name" title={file.path}>{file.path}</span>
+                    <span className="dsdr-file-name" title={file.path}>{name}</span>
                     <span className="dsdr-file-stat">
                       {file.binary ? t('review.binary') : t('review.changes', { added: file.added, deleted: file.deleted })}
                     </span>
