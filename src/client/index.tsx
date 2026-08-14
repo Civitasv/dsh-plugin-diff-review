@@ -683,20 +683,22 @@ const REVIEW_CSS = `
 .dsdr-finding-tag.dsdr-finding-P2{background:rgba(210,153,34,.16);color:#d29922}
 .dsdr-finding-tag.dsdr-finding-P3{background:var(--dsw-alias-fill-l2);color:var(--dsw-alias-label-tertiary)}
 .dsdr-line-jump{background:rgba(88,166,255,.16)}
-.dsdr-review-strip{display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;font-size:12px;flex-wrap:wrap}
-.dsdr-review-ok{color:var(--dsw-alias-state-success-primary)}
-.dsdr-review-bad{color:var(--dsw-alias-state-error-primary)}
-.dsdr-review-model{font-size:11px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
-.dsdr-review-toggle-on{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary)}
-.dsdr-findings{display:flex;flex-direction:column;gap:4px;padding:8px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;max-height:260px;overflow-y:auto}
-.dsdr-finding-item{display:flex;gap:8px;align-items:flex-start;border-radius:8px;padding:6px 8px;cursor:pointer;border:0;background:transparent;text-align:left;font:inherit}
-.dsdr-finding-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.dsdr-finding-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
-.dsdr-finding-title{font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary);display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
-.dsdr-finding-loc{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono);font-weight:400}
-.dsdr-finding-detail{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);white-space:pre-wrap;overflow-wrap:anywhere}
-.dsdr-finding-meta{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
-.dsdr-finding-suggestion{display:block;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;line-height:16px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:6px;padding:4px 8px;font-family:var(--dsw-font-mono)}
+.dsdr-verdict{position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:8px;margin:0 0 6px;padding:8px 12px;background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;box-shadow:var(--dsw-shadow-lv2);font-size:12px;line-height:18px;flex-wrap:wrap}
+.dsdr-verdict-mark{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;font-size:12px;font-weight:700}
+.dsdr-verdict-ok .dsdr-verdict-mark{background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 18%, transparent);color:var(--dsw-alias-state-success-primary)}
+.dsdr-verdict-bad .dsdr-verdict-mark{background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 18%, transparent);color:var(--dsw-alias-state-error-primary)}
+.dsdr-verdict-text{font-weight:600;color:var(--dsw-alias-label-primary)}
+.dsdr-verdict-ok .dsdr-verdict-text{color:var(--dsw-alias-state-success-primary)}
+.dsdr-verdict-bad .dsdr-verdict-text{color:var(--dsw-alias-state-error-primary)}
+.dsdr-verdict-meta{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}
+.dsdr-verdict-model{font-size:11px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
+.dsdr-finding-card{display:flex;flex-direction:column;gap:4px;margin:4px 16px 6px 24px;padding:8px 12px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-left:3px solid var(--dsdr-finding-color, rgba(255,166,87,.9));border-radius:8px}
+.dsdr-finding-card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dsdr-finding-card-title{flex:1;min-width:0;font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.dsdr-finding-card-loc{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dsdr-finding-card-detail{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);white-space:pre-wrap;overflow-wrap:anywhere}
+.dsdr-finding-card-meta{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
+.dsdr-finding-card-suggestion{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;line-height:16px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l1);border-radius:6px;padding:6px 8px;font-family:var(--dsw-font-mono)}
 .dsdr-pr{display:flex;flex-direction:column;gap:4px;padding:4px 8px 8px}
 .dsdr-pr-item{display:flex;flex-direction:column;gap:3px;border-radius:8px;padding:6px 8px;cursor:pointer;border:0;background:transparent;text-align:left;font:inherit}
 .dsdr-pr-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
@@ -1303,6 +1305,26 @@ function CommentEditor({
   )
 }
 
+/** One AI-review finding rendered as an inline card (Codex-style). */
+function FindingCard({ finding, t }: { finding: ReviewFinding; t: (key: keyof typeof zh, params?: Record<string, unknown>) => string }) {
+  return (
+    <div className={`dsdr-finding-card dsdr-finding-${finding.priority}`}>
+      <div className="dsdr-finding-card-head">
+        <span className={`dsdr-finding-tag dsdr-finding-${finding.priority}`}>{finding.priority}</span>
+        <span className="dsdr-finding-card-title">{finding.title}</span>
+        <span className="dsdr-finding-card-loc">
+          {finding.file}:{finding.lineStart}{finding.lineEnd !== finding.lineStart ? `-${finding.lineEnd}` : ''}
+        </span>
+      </div>
+      {finding.detail ? <div className="dsdr-finding-card-detail">{finding.detail}</div> : null}
+      <div className="dsdr-finding-card-meta">
+        {t('review.confidence', { confidence: finding.confidence.toFixed(2) })}
+      </div>
+      {finding.suggestion ? <pre className="dsdr-finding-card-suggestion">{finding.suggestion}</pre> : null}
+    </div>
+  )
+}
+
 /** Unified diff with per-hunk action bars and inline comments (workspace files). */
 function UnifiedDiff({
   diff,
@@ -1437,6 +1459,11 @@ function UnifiedDiff({
                           ) : null}
                         </div>
                         {editing ? <CommentEditor text={commentText ?? ''} onText={onCommentText ?? (() => {})} onSave={onSaveComment ?? (() => {})} onCancel={onCancelComment ?? (() => {})} busy={busy} t={t} /> : null}
+                        {(reviewFindings ?? [])
+                          .filter((f) => f.file === path && f.lineStart === (newLine ?? oldLine))
+                          .map((f, fi) => (
+                            <FindingCard key={`${f.file}:${f.lineStart}:${fi}`} finding={f} t={t} />
+                          ))}
                       </Fragment>
                     )
                   })
@@ -2025,8 +2052,6 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const [repoPath, setRepoPath] = useState<string | null>(null)
   // Temporary line highlight (jump target from a PR comment or a finding).
   const [jumpLine, setJumpLine] = useState<number | null>(null)
-  // Findings list panel visibility.
-  const [findingsOpen, setFindingsOpen] = useState(false)
 
   /** Select a file and flash its line (findings / PR comments). */
   const jumpTo = (file: string, line?: number) => {
@@ -2804,6 +2829,17 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               </button>
             </>
           ) : null}
+          {tab === 'workspace' && status?.isRepo && reviewableFiles > 0 ? (
+            <button
+              type="button"
+              className="dsdr-btn dsdr-btn-primary"
+              disabled={busy || reviewing}
+              onClick={() => void onReview()}
+              title={t('review.reviewScope')}
+            >
+              {reviewing ? t('review.reviewing') : t('review.review')}
+            </button>
+          ) : null}
           <button type="button" className="dsdr-btn" aria-label={t('review.close')} onClick={close}>
             <IconX />
           </button>
@@ -2836,64 +2872,6 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               </button>
             </div>
           </div>
-        ) : null}
-
-        {tab === 'workspace' && review?.ok && reviewableFiles > 0 ? (
-          <>
-            <div className="dsdr-review-strip">
-              <span className={review.verdict === 'incorrect' ? 'dsdr-review-bad' : 'dsdr-review-ok'}>
-                {review.verdict === 'incorrect' ? t('review.verdictIncorrect') : t('review.verdictCorrect')}
-              </span>
-              {review.findings.length > 0 ? (
-                <button
-                  type="button"
-                  className={`dsdr-btn dsdr-review-toggle${findingsOpen ? ' dsdr-review-toggle-on' : ''}`}
-                  onClick={() => setFindingsOpen((v) => !v)}
-                >
-                  {t('review.findings', { n: review.findings.length })}
-                  {review.truncated ? ' (truncated)' : ''}
-                </button>
-              ) : (
-                <span>
-                  {t('review.noFindings')}
-                  {review.truncated ? ' (truncated)' : ''}
-                </span>
-              )}
-              {review.model ? <span className="dsdr-review-model">{review.model.provider}/{review.model.model}</span> : null}
-              <span className="dsdr-spacer" />
-              {review.findings.length > 0 ? (
-                <button type="button" className="dsdr-btn" disabled={busy} onClick={() => openSendPanelWith(composeFindingsMessage())}>
-                  {t('review.sendFindings')}
-                </button>
-              ) : null}
-            </div>
-            {findingsOpen && review.findings.length > 0 ? (
-              <div className="dsdr-findings">
-                {review.findings.map((finding, i) => (
-                  <button
-                    key={`${finding.file}:${finding.lineStart}-${finding.lineEnd}:${i}`}
-                    type="button"
-                    className="dsdr-finding-item"
-                    onClick={() => jumpTo(finding.file, finding.lineStart)}
-                  >
-                    <span className={`dsdr-finding-tag dsdr-finding-${finding.priority}`}>{finding.priority}</span>
-                    <span className="dsdr-finding-body">
-                      <span className="dsdr-finding-title">
-                        {finding.title}
-                        <span className="dsdr-finding-loc">{finding.file}:{finding.lineStart}{finding.lineEnd !== finding.lineStart ? `-${finding.lineEnd}` : ''}</span>
-                      </span>
-                      {finding.detail ? <span className="dsdr-finding-detail">{finding.detail}</span> : null}
-                      <span className="dsdr-finding-meta">
-                        {t('review.confidence', { confidence: finding.confidence.toFixed(2) })}
-                        {finding.suggestion ? ` · ${t('review.suggestion')}` : ''}
-                      </span>
-                      {finding.suggestion ? <code className="dsdr-finding-suggestion">{finding.suggestion}</code> : null}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </>
         ) : null}
 
         {tab === 'session' ? (
@@ -3186,6 +3164,25 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               ) : null}
             </div>
             <div className="dsdr-diff">
+              {review?.ok ? (
+                <div className={`dsdr-verdict${review.verdict === 'incorrect' ? ' dsdr-verdict-bad' : ' dsdr-verdict-ok'}`}>
+                  <span className="dsdr-verdict-mark">{review.verdict === 'incorrect' ? '✗' : '✓'}</span>
+                  <span className="dsdr-verdict-text">
+                    {review.verdict === 'incorrect' ? t('review.verdictIncorrect') : t('review.verdictCorrect')}
+                  </span>
+                  <span className="dsdr-verdict-meta">
+                    {review.findings.length > 0 ? t('review.findings', { n: review.findings.length }) : t('review.noFindings')}
+                    {review.truncated ? ' (truncated)' : ''}
+                  </span>
+                  {review.model ? <span className="dsdr-verdict-model">{review.model.provider}/{review.model.model}</span> : null}
+                  <span className="dsdr-spacer" />
+                  {review.findings.length > 0 ? (
+                    <button type="button" className="dsdr-btn" disabled={busy} onClick={() => openSendPanelWith(composeFindingsMessage())}>
+                      {t('review.sendFindings')}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
               {selectedCommit ? (
                 commitDiffLoading ? (
                   <div className="dsdr-diff-empty">{t('review.busy')}</div>
@@ -3374,6 +3371,11 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                                   {commentEditor && (leftKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` || rightKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}`) ? (
                                     <CommentEditor text={commentText} onText={setCommentText} onSave={() => void saveComment()} onCancel={cancelComment} busy={busy} t={t} />
                                   ) : null}
+                                  {(review?.findings ?? [])
+                                    .filter((f) => f.file === selectedFile.path && f.lineStart === (row.leftNum ?? row.rightNum))
+                                    .map((f, fi) => (
+                                      <FindingCard key={`${f.file}:${f.lineStart}:${fi}`} finding={f} t={t} />
+                                    ))}
                                 </Fragment>
                               )
                             })}
