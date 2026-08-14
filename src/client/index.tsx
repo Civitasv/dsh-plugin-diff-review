@@ -1,26 +1,31 @@
 /**
  * Diff-review plugin — client half.
  *
- * Codex-style review of the session workspace's uncommitted changes:
+ * Codex-style review with two sources:
  *
- * - A session-header action ("Diff Review") shows the changed-file count of
- *   the current session's workspace and opens the review surface.
- * - The review surface mounts in the frame-wide `shell.overlay` layer (root
- *   scope): a modal with a file list on the left and a per-file unified diff
- *   on the right, plus Accept (stage) / Revert (discard) per file and for
- *   everything at once. Revert requires a confirming second click.
+ * 1. **会话更改 (Session changes)** — what the agent changed in each round of
+ *    this conversation, derived from the conversation snapshot (tool results
+ *    carry the host-computed `resultView` diff hunks). Works with or without
+ *    git, and shows a change even when no diff text is available (path-only).
+ * 2. **工作区 (Workspace)** — the git working tree's uncommitted changes
+ *    (staged + unstaged + untracked) with per-file / all-file accept (stage)
+ *    and revert (discard) through the plugin's server routes.
  *
- * State hand-off between the session-scoped trigger and the root-scoped
- * overlay goes through a plain module-level snapshot store (the slot store
- * seat cannot span scopes): the trigger writes `{ open, cwd, key }`, the
- * overlay subscribes with useSyncExternalStore and re-loads on each open.
+ * The review surface mounts in `shell.overlay` (root scope). State hand-off
+ * between the session-scoped header trigger and the root-scoped overlay goes
+ * through a module-level snapshot store; the conversation snapshot for the
+ * current session is read reactively through `ctx.sessions` (injected via the
+ * overlay registration's inject face).
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import type { ClientContext, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+import { diffLines } from 'diff'
+import type { ClientContext, ISessions, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-// Type-only imports pulling the header-action slot contract, the
-// session/global standard kit, and the shell.overlay contract into this program.
+import type { ConversationNode, ToolResultNode, UserMessageNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ToolResultView } from '@deepseek-ai/dsh-api-remotes/client'
+// Type-only imports pulling the header-action slot contract, the shell.overlay
+// contract and the standard kit into this program.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -43,6 +48,211 @@ const overlayStore = createSnapshotStore<{ open: boolean; cwd: string | null; ke
   key: 0,
 })
 
+// ---------------------------------------------------------------------------
+// Session-changes extraction (client-side, works without git).
+// ---------------------------------------------------------------------------
+
+/** One before/after slice of a change (a hunk). */
+interface Hunk {
+  oldText: string | null
+  newText: string
+}
+
+/** One file changed inside one round. */
+interface RoundChange {
+  path: string
+  tool: string
+  hunks: Hunk[]
+  /** False when only the path is known (no diff data persisted). */
+  hasDiff: boolean
+}
+
+/** One user round and the files it changed. */
+interface SessionRound {
+  round: number
+  label: string
+  changes: RoundChange[]
+}
+
+interface FileDiffLike {
+  path: string
+  oldText: string | null
+  newText: string
+}
+
+/** Validate a raw FileDiff-shaped value (the tools' `{path, oldText, newText}` contract). */
+function asFileDiff(raw: unknown): FileDiffLike | null {
+  if (!raw || typeof raw !== 'object') return null
+  const rec = raw as Record<string, unknown>
+  if (typeof rec.path !== 'string' || !rec.path) return null
+  if (typeof rec.newText !== 'string') return null
+  const oldText = rec.oldText
+  return { path: rec.path, oldText: typeof oldText === 'string' ? oldText : null, newText: rec.newText }
+}
+
+/** Diff hunks carried by a completed tool result (`resultView.card === 'diff'`). */
+function diffsFromResultView(resultView: ToolResultView | null): FileDiffLike[] {
+  if (!resultView || resultView.card !== 'diff' || !Array.isArray(resultView.diffs)) return []
+  return resultView.diffs.map(asFileDiff).filter((d): d is FileDiffLike => d !== null)
+}
+
+/** Raw `meta.diffs` fallback (the persisted tool/result meta). */
+function diffsFromMeta(meta: unknown): FileDiffLike[] {
+  if (!meta || typeof meta !== 'object') return []
+  const diffs = (meta as Record<string, unknown>).diffs
+  if (!Array.isArray(diffs)) return []
+  return diffs.map(asFileDiff).filter((d): d is FileDiffLike => d !== null)
+}
+
+const MUTATION_TOOLS = new Set(['str_replace_editor', 'notebook_edit'])
+const MUTATION_COMMANDS = new Set(['write', 'edit', 'replace', 'delete', 'move'])
+
+/** Path-only fallback for known file-mutating tools whose result carried no diff. */
+function mutationPath(tool: string, argsRaw: string): string | null {
+  let args: Record<string, unknown> | null = null
+  try {
+    args = JSON.parse(argsRaw) as Record<string, unknown>
+  } catch {
+    return null
+  }
+  if (!args || typeof args !== 'object') return null
+  if (tool === 'fs' || tool === 'filesystem') {
+    const cmd = typeof args.command === 'string' ? args.command : ''
+    if (!MUTATION_COMMANDS.has(cmd)) return null
+    return typeof args.file_path === 'string' && args.file_path ? args.file_path : null
+  }
+  if (MUTATION_TOOLS.has(tool) || tool.startsWith('edit')) {
+    for (const key of ['file_path', 'path', 'filename']) {
+      if (typeof args[key] === 'string' && args[key]) return args[key] as string
+    }
+  }
+  return null
+}
+
+/** Extract the changed files from one settled tool result (diff hunks, else path-only). */
+function changesFromToolResult(call: { name: string; argsRaw: string }, node: ToolResultNode): RoundChange[] {
+  const tool = call.name
+  const diffs = diffsFromResultView(node.resultView)
+  const fallbackDiffs = diffs.length === 0 ? diffsFromMeta(node.meta) : []
+  const allDiffs = diffs.length > 0 ? diffs : fallbackDiffs
+  if (allDiffs.length > 0) {
+    const byPath = new Map<string, RoundChange>()
+    for (const d of allDiffs) {
+      let entry = byPath.get(d.path)
+      if (!entry) {
+        entry = { path: d.path, tool, hunks: [], hasDiff: true }
+        byPath.set(d.path, entry)
+      }
+      entry.hunks.push({ oldText: d.oldText, newText: d.newText })
+    }
+    return [...byPath.values()]
+  }
+  const path = mutationPath(tool, call.argsRaw)
+  return path ? [{ path, tool, hunks: [], hasDiff: false }] : []
+}
+
+/** Plain text of a user message (content blocks of type 'text'). */
+function userText(node: UserMessageNode): string {
+  const parts: string[] = []
+  for (const block of node.content) {
+    if (block && typeof block === 'object' && (block as { type?: unknown }).type === 'text' && typeof (block as { text?: unknown }).text === 'string') {
+      parts.push((block as { text: string }).text)
+    }
+  }
+  return parts.join(' ').replace(/\s+/g, ' ').trim()
+}
+
+/** Walk the conversation nodes and group changed files by user round. */
+export function collectSessionRounds(nodes: readonly ConversationNode[]): SessionRound[] {
+  const rounds: SessionRound[] = []
+  let current: SessionRound | null = null
+  for (const node of nodes) {
+    if (node.kind === 'user') {
+      current = { round: rounds.length + 1, label: userText(node).slice(0, 60), changes: [] }
+      rounds.push(current)
+      continue
+    }
+    if (node.kind !== 'tool-result' || !current || !node.call) continue
+    for (const change of changesFromToolResult(node.call, node)) {
+      const existing = current.changes.find((c) => c.path === change.path && c.tool === change.tool)
+      if (existing) {
+        if (change.hasDiff) {
+          existing.hunks.push(...change.hunks)
+          existing.hasDiff = true
+        }
+      } else {
+        current.changes.push(change)
+      }
+    }
+  }
+  return rounds.filter((r) => r.changes.length > 0)
+}
+
+/** Count of changed files across all rounds (for the header badge). */
+export function countSessionChanges(nodes: readonly ConversationNode[]): number {
+  let count = 0
+  const seen = new Set<string>()
+  for (const node of nodes) {
+    if (node.kind !== 'tool-result' || !node.call) continue
+    for (const change of changesFromToolResult(node.call, node)) {
+      const key = `${change.tool}:${change.path}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        count++
+      }
+    }
+  }
+  return count
+}
+
+// ---------------------------------------------------------------------------
+// Diff rendering.
+// ---------------------------------------------------------------------------
+
+type DiffRow = { kind: 'add' | 'del' | 'ctx' | 'hunk' | 'file' | 'note'; text: string }
+
+/** Classify raw unified-diff text (git output) into rows. */
+function gitDiffRows(diff: string): DiffRow[] {
+  return diff.split('\n').map((line) => {
+    if (line.startsWith('+++') || line.startsWith('---')) return { kind: 'file' as const, text: line }
+    if (line.startsWith('@@')) return { kind: 'hunk' as const, text: line }
+    if (line.startsWith('+')) return { kind: 'add' as const, text: line }
+    if (line.startsWith('-')) return { kind: 'del' as const, text: line }
+    if (line.startsWith('\\ ')) return { kind: 'note' as const, text: line }
+    return { kind: 'ctx' as const, text: line }
+  })
+}
+
+/** Compute add/del/ctx rows between two texts (the tools' FileDiff shape). */
+function textDiffRows(oldText: string | null, newText: string): DiffRow[] {
+  const rows: DiffRow[] = []
+  for (const part of diffLines(oldText ?? '', newText)) {
+    const lines = part.value.split('\n')
+    if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+    for (const line of lines) {
+      if (part.added) rows.push({ kind: 'add', text: `+${line}` })
+      else if (part.removed) rows.push({ kind: 'del', text: `-${line}` })
+      else rows.push({ kind: 'ctx', text: line })
+    }
+  }
+  return rows
+}
+
+/** All rows for one round change (multiple hunks get `@@` separators). */
+function changeRows(change: RoundChange): DiffRow[] {
+  if (!change.hasDiff || change.hunks.length === 0) return []
+  const rows: DiffRow[] = []
+  change.hunks.forEach((hunk, i) => {
+    if (change.hunks.length > 1) rows.push({ kind: 'hunk', text: `@@ hunk ${i + 1}/${change.hunks.length} @@` })
+    rows.push(...textDiffRows(hunk.oldText, hunk.newText))
+  })
+  return rows
+}
+
+// ---------------------------------------------------------------------------
+// Styles (dsdr-*; the header trigger mirrors the in-tree action rows).
+// ---------------------------------------------------------------------------
+
 const REVIEW_CSS = `
 .dsdr-trigger{min-height:28px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:0;border-radius:6px;align-items:center;gap:4px;padding:3px 6px;font:inherit;font-size:12px;line-height:18px;display:inline-flex}
 .dsdr-trigger:hover,.dsdr-trigger:focus-visible{color:var(--dsw-alias-label-secondary)}
@@ -53,6 +263,10 @@ const REVIEW_CSS = `
 .dsdr-header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
 .dsdr-title{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary)}
 .dsdr-subtitle{color:var(--dsw-alias-label-tertiary);font-size:12px;font-family:var(--dsw-font-mono)}
+.dsdr-tabs{display:flex;gap:4px;margin-left:14px}
+.dsdr-tab{box-sizing:border-box;min-height:26px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:2px 10px;font:inherit;font-size:12px;line-height:18px}
+.dsdr-tab:hover{color:var(--dsw-alias-label-secondary)}
+.dsdr-tab-active{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsdr-spacer{flex:1}
 .dsdr-btn{box-sizing:border-box;min-height:28px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;padding:3px 10px;font:inherit;font-size:12px;line-height:18px;display:inline-flex;align-items:center;gap:5px}
 .dsdr-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
@@ -63,18 +277,21 @@ const REVIEW_CSS = `
 .dsdr-btn-confirm{border-color:var(--dsw-alias-state-error-primary);background:var(--dsw-alias-state-error-primary);color:var(--dsw-static-neutral-bluish-50)}
 .dsdr-btn-confirm:hover:not(:disabled){background:var(--dsw-alias-state-error-primary);color:var(--dsw-static-neutral-bluish-50)}
 .dsdr-body{display:flex;flex:1;min-height:0}
-.dsdr-files{width:290px;flex:none;border-right:1px solid var(--dsw-alias-border-l1);overflow-y:auto;padding:8px}
+.dsdr-files{width:300px;flex:none;border-right:1px solid var(--dsw-alias-border-l1);overflow-y:auto;padding:8px}
+.dsdr-round{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);padding:8px 8px 3px;font-weight:600}
+.dsdr-round-label{white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-weight:400;color:var(--dsw-alias-label-secondary)}
 .dsdr-file{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;border-radius:8px;padding:6px 8px;cursor:pointer;border:0;background:transparent;text-align:left;font:inherit;color:var(--dsw-alias-label-primary)}
 .dsdr-file:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-file-selected{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-file-name{flex:1;min-width:0;font-size:12px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-family:var(--dsw-font-mono)}
 .dsdr-file-stat{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
 .dsdr-chip{flex:none;min-width:22px;text-align:center;border-radius:5px;font-size:11px;line-height:16px;padding:0 4px;font-family:var(--dsw-font-mono)}
-.dsdr-chip-m{background:rgba(217,130,27,.16);color:var(--dsw-alias-state-warning-primary, #d9821b)}
-.dsdr-chip-a{background:rgba(46,160,67,.16);color:var(--dsw-alias-state-success-primary, #2ea043)}
-.dsdr-chip-d{background:rgba(248,81,73,.16);color:var(--dsw-alias-state-error-primary, #f85149)}
-.dsdr-chip-r{background:rgba(88,166,255,.16);color:var(--dsw-alias-state-info-primary, #58a6ff)}
+.dsdr-chip-m{background:rgba(46,160,67,.16);color:#2ea043}
+.dsdr-chip-a{background:rgba(46,160,67,.16);color:#2ea043}
+.dsdr-chip-d{background:rgba(248,81,73,.16);color:#f85149}
+.dsdr-chip-r{background:rgba(88,166,255,.16);color:#58a6ff}
 .dsdr-chip-u{background:var(--dsw-alias-fill-l2);color:var(--dsw-alias-label-tertiary)}
+.dsdr-tool{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
 .dsdr-diff{flex:1;min-width:0;overflow:auto;padding:10px 0}
 .dsdr-diff-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--dsw-alias-label-tertiary);font-size:13px}
 .dsdr-diff-head{display:flex;align-items:center;gap:10px;padding:6px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
@@ -95,6 +312,7 @@ const REVIEW_CSS = `
 .dsdr-spinner{flex:none;width:12px;height:12px;border-radius:50%;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-label-secondary);animation:dsdr-spin .8s linear infinite}
 @keyframes dsdr-spin{to{transform:rotate(360deg)}}
 .dsdr-empty{padding:40px;text-align:center;color:var(--dsw-alias-label-tertiary);font-size:13px}
+.dsdr-nodiff{padding:8px 16px;color:var(--dsw-alias-label-tertiary);font-size:12px}
 `
 if (typeof document !== 'undefined' && document.querySelector(`style[data-plugin-css=${JSON.stringify(STYLE_TAG)}]`) === null) {
   const tag = document.createElement('style')
@@ -107,12 +325,17 @@ if (typeof document !== 'undefined' && document.querySelector(`style[data-plugin
 /** Simplified Chinese dictionary (key-set source of truth). */
 const zh = {
   'action.label': 'Diff 审查',
-  'action.aria': '审查当前项目的未提交更改',
-  'action.count': '{count} 个文件更改',
+  'action.aria': '审查当前项目与每轮修改',
+  'tab.session': '会话更改',
+  'tab.workspace': '工作区',
   'review.title': 'Diff 审查',
   'review.branch': '分支',
   'review.detached': '游离 HEAD',
   'review.notRepo': '当前目录不是 git 仓库',
+  'review.notRepoHint': '「会话更改」页签不受影响，仍可查看每轮修改。',
+  'review.noSessionChanges': '这个会话还没有文件修改记录',
+  'review.sessionStats': '{rounds} 轮 · {files} 个文件',
+  'review.round': '第 {round} 轮',
   'review.empty': '没有未提交的更改 🎉',
   'review.loadError': '加载失败',
   'review.accept': '采纳',
@@ -130,19 +353,24 @@ const zh = {
   'review.reverted': '丢弃',
   'review.untracked': '未跟踪',
   'review.binary': '二进制',
-  'review.selectedFile': '已选文件',
+  'review.noDiffData': '该修改没有 diff 数据',
   'review.changes': '{added}+ {deleted}-',
 } as const
 
 /** English dictionary, checked complete against the zh key set. */
 const en: Record<keyof typeof zh, string> = {
   'action.label': 'Diff Review',
-  'action.aria': 'Review uncommitted changes of the current project',
-  'action.count': '{count} changed files',
+  'action.aria': 'Review workspace and per-round changes',
+  'tab.session': 'Session',
+  'tab.workspace': 'Workspace',
   'review.title': 'Diff Review',
   'review.branch': 'branch',
   'review.detached': 'detached HEAD',
   'review.notRepo': 'This directory is not a git repository',
+  'review.notRepoHint': 'The "Session" tab still shows every round\'s changes.',
+  'review.noSessionChanges': 'No file changes recorded in this session yet',
+  'review.sessionStats': '{rounds} rounds · {files} files',
+  'review.round': 'Round {round}',
   'review.empty': 'No uncommitted changes 🎉',
   'review.loadError': 'Failed to load',
   'review.accept': 'Accept',
@@ -160,12 +388,12 @@ const en: Record<keyof typeof zh, string> = {
   'review.reverted': 'Reverted',
   'review.untracked': 'untracked',
   'review.binary': 'binary',
-  'review.selectedFile': 'selected file',
+  'review.noDiffData': 'No diff data for this change',
   'review.changes': '{added}+ {deleted}-',
 }
 
 type DiffReviewActionProps = PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'diff-review'>
-type DiffReviewOverlayProps = PropsRuntime<'shell.overlay'> & PropsLocale<'diff-review'>
+type DiffReviewOverlayProps = PropsRuntime<'shell.overlay'> & PropsLocale<'diff-review'> & { sessions: ISessions }
 
 /** Diff icon (lucide file-diff). */
 function IconDiff() {
@@ -197,7 +425,7 @@ function IconRefresh() {
   )
 }
 
-/** Status chip color class for a change. */
+/** Status chip color class for a workspace change. */
 function chipClass(status: string): string {
   const s = status.replace(/\s/g, '')
   if (s.includes('??')) return 'dsdr-chip-u'
@@ -207,19 +435,6 @@ function chipClass(status: string): string {
   return 'dsdr-chip-m'
 }
 
-/** Split unified diff text into renderable lines. */
-function diffLines(diff: string): { kind: 'add' | 'del' | 'ctx' | 'hunk' | 'file' | 'note'; text: string }[] {
-  return diff.split('\n').map((line) => {
-    if (line.startsWith('+++') || line.startsWith('---')) return { kind: 'file' as const, text: line }
-    if (line.startsWith('@@')) return { kind: 'hunk' as const, text: line }
-    if (line.startsWith('+')) return { kind: 'add' as const, text: line }
-    if (line.startsWith('-')) return { kind: 'del' as const, text: line }
-    if (line.startsWith('\\ ')) return { kind: 'note' as const, text: line }
-    return { kind: 'ctx' as const, text: line }
-  })
-}
-
-/** Fetch the review status for a workspace. */
 async function loadStatus(cwd: string): Promise<StatusResponse> {
   const res = await fetch(`${STATUS_URL}?cwd=${encodeURIComponent(cwd)}`, { headers: { accept: 'application/json' } })
   if (!res.ok) throw new Error(`status request failed: ${res.status}`)
@@ -236,30 +451,14 @@ async function applyChanges(cwd: string, action: 'accept' | 'revert', path?: str
 }
 
 // ---------------------------------------------------------------------------
-// Header action (session scope).
+// Header action (session scope): badge + open.
 // ---------------------------------------------------------------------------
 
-function DiffReviewAction({ sessionId, useSessions, t }: DiffReviewActionProps) {
+function DiffReviewAction({ sessionId, useSessions, useSession, t }: DiffReviewActionProps) {
   const cwd = useSessions((s: SessionListState) => s.byId[sessionId]?.cwd)
-  const [count, setCount] = useState<number | null>(null)
+  const nodes = useSession((s) => s.nodes)
+  const changeCount = useMemo(() => countSessionChanges(nodes), [nodes])
   const [open, setOpen] = useState(false)
-
-  // Badge: changed-file count of this session's workspace.
-  useEffect(() => {
-    let alive = true
-    setCount(null)
-    if (!cwd) return
-    void loadStatus(cwd)
-      .then((status) => {
-        if (alive && status.isRepo) setCount(status.files.length)
-      })
-      .catch(() => {
-        // badge is a nicety — the review surface reports errors itself
-      })
-    return () => {
-      alive = false
-    }
-  }, [cwd])
 
   const openOverlay = () => {
     if (!cwd) return
@@ -270,13 +469,6 @@ function DiffReviewAction({ sessionId, useSessions, t }: DiffReviewActionProps) 
     })
   }
 
-  const closeOverlay = () => {
-    overlayStore.update((d) => {
-      d.open = false
-    })
-  }
-
-  // Keep the trigger's open state in sync with the store (e.g. Escape close).
   useEffect(() => {
     const unsub = overlayStore.subscribe(() => {
       setOpen(overlayStore.getSnapshot().open)
@@ -287,26 +479,24 @@ function DiffReviewAction({ sessionId, useSessions, t }: DiffReviewActionProps) 
   if (!cwd) return null
 
   return (
-    <button
-      type="button"
-      className="dsdr-trigger"
-      aria-label={t('action.aria')}
-      onClick={openOverlay}
-    >
+    <button type="button" className="dsdr-trigger" aria-label={t('action.aria')} onClick={openOverlay}>
       <IconDiff />
       <span className="dsdr-label">{t('action.label')}</span>
-      {count !== null && count > 0 ? <span className="dsdr-count">{count}</span> : null}
+      {changeCount > 0 ? <span className="dsdr-count">{changeCount}</span> : null}
       {open ? <span className="dsdr-count" aria-hidden="true">✓</span> : null}
     </button>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Review overlay (root scope).
+// Review overlay (root scope): session + workspace tabs.
 // ---------------------------------------------------------------------------
 
-function DiffReviewOverlay({ t }: DiffReviewOverlayProps) {
-  const state = useSyncExternalStore(overlayStore.subscribe, overlayStore.getSnapshot)
+function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
+  const storeState = useSyncExternalStore(overlayStore.subscribe, overlayStore.getSnapshot)
+  const [tab, setTab] = useState<'session' | 'workspace'>('session')
+
+  // Workspace tab state.
   const [status, setStatus] = useState<StatusResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
@@ -316,9 +506,39 @@ function DiffReviewOverlay({ t }: DiffReviewOverlayProps) {
   const [confirm, setConfirm] = useState<'file' | 'all' | null>(null)
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
-  const cwd = state.cwd
+  // Current session's conversation snapshot (reactive), for the session tab.
+  const currentId = useSyncExternalStore(
+    useMemo(() => (notify: () => void) => sessions.list.subscribe(notify), [sessions]),
+    useMemo(() => () => sessions.list.getSnapshot().current, [sessions]),
+  )
+  const snapshot = useSyncExternalStore(
+    useMemo(() => {
+      return (notify: () => void) => {
+        const binding = currentId ? sessions.binding(currentId) : undefined
+        if (!binding) return () => {}
+        return binding.session.subscribe(notify)
+      }
+    }, [sessions, currentId]),
+    useMemo(() => {
+      return () => {
+        const binding = currentId ? sessions.binding(currentId) : undefined
+        return binding ? binding.session.getSnapshot() : null
+      }
+    }, [sessions, currentId]),
+  )
 
-  const load = async (silent = false) => {
+  const rounds = useMemo(() => (snapshot ? collectSessionRounds(snapshot.nodes) : []), [snapshot])
+  const totalSessionFiles = useMemo(() => rounds.reduce((n, r) => n + r.changes.length, 0), [rounds])
+  const [selectedRound, setSelectedRound] = useState<number | null>(null)
+  const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const selectedChange = useMemo(() => {
+    const round = rounds.find((r) => r.round === selectedRound)
+    return round?.changes.find((c) => c.path === selectedPath) ?? null
+  }, [rounds, selectedRound, selectedPath])
+
+  const cwd = storeState.cwd
+
+  const loadWorkspace = async (silent = false) => {
     if (!cwd) return
     if (!silent) setLoading(true)
     setError(null)
@@ -334,14 +554,26 @@ function DiffReviewOverlay({ t }: DiffReviewOverlayProps) {
     }
   }
 
+  // Load workspace status lazily on first visit of the tab.
+  const workspaceLoaded = useRef(false)
   useEffect(() => {
-    if (state.open && state.key > 0) void load()
+    if (tab === 'workspace' && !workspaceLoaded.current && cwd) {
+      workspaceLoaded.current = true
+      void loadWorkspace()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.open, state.key])
+  }, [tab, cwd])
 
-  // Escape / outside-click close + notice auto-dismiss.
+  // Default selection for the session tab follows the first round with changes.
   useEffect(() => {
-    if (!state.open) return
+    if (selectedRound === null && rounds.length > 0) {
+      setSelectedRound(rounds[0].round)
+      setSelectedPath(rounds[0].changes[0]?.path ?? null)
+    }
+  }, [rounds, selectedRound])
+
+  useEffect(() => {
+    if (!storeState.open) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         overlayStore.update((d) => {
@@ -351,7 +583,7 @@ function DiffReviewOverlay({ t }: DiffReviewOverlayProps) {
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [state.open])
+  }, [storeState.open])
 
   useEffect(() => {
     if (!notice) return
@@ -359,7 +591,7 @@ function DiffReviewOverlay({ t }: DiffReviewOverlayProps) {
     return () => clearTimeout(noticeTimer.current)
   }, [notice])
 
-  if (!state.open || !cwd) return null
+  if (!storeState.open || !cwd) return null
 
   const files = status?.isRepo ? status.files : []
   const selectedFile = files.find((f) => f.path === selected) ?? null
@@ -379,7 +611,7 @@ function DiffReviewOverlay({ t }: DiffReviewOverlayProps) {
             ? t('review.doneOne', { action: action === 'accept' ? t('review.accepted') : t('review.reverted'), path })
             : t('review.done', { action: action === 'accept' ? t('review.accepted') : t('review.reverted'), count: files.length }),
         })
-        await load(true)
+        await loadWorkspace(true)
       } else {
         setNotice({ kind: 'error', text: result.error || t('review.loadError') })
       }
@@ -408,64 +640,146 @@ function DiffReviewOverlay({ t }: DiffReviewOverlayProps) {
     void runApply(action)
   }
 
+  const close = () => {
+    overlayStore.update((d) => {
+      d.open = false
+    })
+  }
+
   return (
     <div
       className="dsdr-overlay"
       onPointerDown={(event) => {
-        if (event.target === event.currentTarget) {
-          overlayStore.update((d) => {
-            d.open = false
-          })
-        }
+        if (event.target === event.currentTarget) close()
       }}
     >
       <div className="dsdr-panel" role="dialog" aria-modal="true" aria-label={t('review.title')}>
         <div className="dsdr-header">
           <span className="dsdr-title">{t('review.title')}</span>
+          <span className="dsdr-tabs" role="tablist" aria-label={t('review.title')}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'session'}
+              className={`dsdr-tab${tab === 'session' ? ' dsdr-tab-active' : ''}`}
+              onClick={() => setTab('session')}
+            >
+              {t('tab.session')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'workspace'}
+              className={`dsdr-tab${tab === 'workspace' ? ' dsdr-tab-active' : ''}`}
+              onClick={() => setTab('workspace')}
+            >
+              {t('tab.workspace')}
+            </button>
+          </span>
           <span className="dsdr-subtitle">
-            {status?.isRepo
-              ? `${status.branch ?? t('review.detached')} · ${t('review.changes', { added: totalAdded, deleted: totalDeleted })}`
-              : t('review.notRepo')}
+            {tab === 'session'
+              ? t('review.sessionStats', { rounds: rounds.length, files: totalSessionFiles })
+              : status?.isRepo
+                ? `${status.branch ?? t('review.detached')} · ${t('review.changes', { added: totalAdded, deleted: totalDeleted })}`
+                : t('review.notRepo')}
           </span>
           <span className="dsdr-spacer" />
-          <button type="button" className="dsdr-btn dsdr-btn-primary" disabled={busy || files.length === 0} onClick={() => onAllAction('accept')}>
-            {t('review.acceptAll')}
-          </button>
-          <button
-            type="button"
-            className={`dsdr-btn dsdr-btn-danger${confirm === 'all' ? ' dsdr-btn-confirm' : ''}`}
-            disabled={busy || files.length === 0}
-            onClick={() => onAllAction('revert')}
-          >
-            {confirm === 'all' ? t('review.confirmRevertAll') : t('review.revertAll')}
-          </button>
-          <button type="button" className="dsdr-btn" disabled={busy} onClick={() => void load()}>
-            <IconRefresh />
-            {t('review.refresh')}
-          </button>
-          <button
-            type="button"
-            className="dsdr-btn"
-            aria-label={t('review.close')}
-            onClick={() =>
-              overlayStore.update((d) => {
-                d.open = false
-              })
-            }
-          >
+          {tab === 'workspace' ? (
+            <>
+              <button type="button" className="dsdr-btn dsdr-btn-primary" disabled={busy || files.length === 0} onClick={() => onAllAction('accept')}>
+                {t('review.acceptAll')}
+              </button>
+              <button
+                type="button"
+                className={`dsdr-btn dsdr-btn-danger${confirm === 'all' ? ' dsdr-btn-confirm' : ''}`}
+                disabled={busy || files.length === 0}
+                onClick={() => onAllAction('revert')}
+              >
+                {confirm === 'all' ? t('review.confirmRevertAll') : t('review.revertAll')}
+              </button>
+              <button type="button" className="dsdr-btn" disabled={busy} onClick={() => void loadWorkspace()}>
+                <IconRefresh />
+                {t('review.refresh')}
+              </button>
+            </>
+          ) : null}
+          <button type="button" className="dsdr-btn" aria-label={t('review.close')} onClick={close}>
             <IconX />
           </button>
         </div>
 
-        {error && !status?.isRepo ? <div className="dsdr-empty">{error}</div> : null}
-
-        {status?.isRepo && files.length === 0 ? (
+        {tab === 'session' ? (
+          rounds.length === 0 ? (
+            <div className="dsdr-empty">{t('review.noSessionChanges')}</div>
+          ) : (
+            <div className="dsdr-body">
+              <div className="dsdr-files" role="listbox" aria-label={t('tab.session')}>
+                {rounds.map((round) => (
+                  <div key={round.round}>
+                    <div className="dsdr-round">
+                      {t('review.round', { round: round.round })}
+                      {round.label ? <div className="dsdr-round-label" title={round.label}>{round.label}</div> : null}
+                    </div>
+                    {round.changes.map((change) => {
+                      const key = `${round.round}:${change.path}`
+                      const selectedKey = selectedChange ? `${selectedRound}:${selectedChange.path}` : null
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          role="option"
+                          aria-selected={key === selectedKey}
+                          className={`dsdr-file${key === selectedKey ? ' dsdr-file-selected' : ''}`}
+                          onClick={() => {
+                            setSelectedRound(round.round)
+                            setSelectedPath(change.path)
+                            setConfirm(null)
+                          }}
+                        >
+                          <span className={`dsdr-chip ${change.hasDiff ? 'dsdr-chip-m' : 'dsdr-chip-u'}`}>{change.hasDiff ? 'M' : '·'}</span>
+                          <span className="dsdr-file-name" title={change.path}>{change.path}</span>
+                          <span className="dsdr-tool" title={change.tool}>{change.tool}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
+              <div className="dsdr-diff">
+                {selectedChange ? (
+                  <>
+                    <div className="dsdr-diff-head">
+                      <span className="dsdr-diff-path" title={selectedChange.path}>{selectedChange.path}</span>
+                      <span className="dsdr-tool">{selectedChange.tool}</span>
+                    </div>
+                    {selectedChange.hasDiff ? (
+                      <div className="dsdr-diff-scroll">
+                        <pre className="dsdr-pre">
+                          {changeRows(selectedChange).map((row, i) => (
+                            <div key={i} className={`dsdr-line dsdr-line-${row.kind}`}>{row.text || ' '}</div>
+                          ))}
+                        </pre>
+                      </div>
+                    ) : (
+                      <div className="dsdr-nodiff">{t('review.noDiffData')}</div>
+                    )}
+                  </>
+                ) : (
+                  <div className="dsdr-diff-empty">{t('review.noSessionChanges')}</div>
+                )}
+              </div>
+            </div>
+          )
+        ) : error && !status?.isRepo ? (
+          <div className="dsdr-empty">
+            {error}
+            <div>{t('review.notRepoHint')}</div>
+          </div>
+        ) : status?.isRepo && files.length === 0 ? (
           <div className="dsdr-empty">{t('review.empty')}</div>
-        ) : null}
-
-        {status?.isRepo && files.length > 0 ? (
+        ) : status?.isRepo && files.length > 0 ? (
           <div className="dsdr-body">
-            <div className="dsdr-files" role="listbox" aria-label={t('review.title')}>
+            <div className="dsdr-files" role="listbox" aria-label={t('tab.workspace')}>
               {files.map((file) => (
                 <button
                   key={file.path}
@@ -479,9 +793,7 @@ function DiffReviewOverlay({ t }: DiffReviewOverlayProps) {
                   }}
                 >
                   <span className={`dsdr-chip ${chipClass(file.status)}`}>{file.untracked ? '??' : file.status}</span>
-                  <span className="dsdr-file-name" title={file.path}>
-                    {file.path}
-                  </span>
+                  <span className="dsdr-file-name" title={file.path}>{file.path}</span>
                   <span className="dsdr-file-stat">
                     {file.binary ? t('review.binary') : t('review.changes', { added: file.added, deleted: file.deleted })}
                   </span>
@@ -497,9 +809,7 @@ function DiffReviewOverlay({ t }: DiffReviewOverlayProps) {
                       {selectedFile.origPath ? ` ← ${selectedFile.origPath}` : ''}
                     </span>
                     <span className="dsdr-diff-stats">
-                      {selectedFile.binary
-                        ? t('review.binary')
-                        : t('review.changes', { added: selectedFile.added, deleted: selectedFile.deleted })}
+                      {selectedFile.binary ? t('review.binary') : t('review.changes', { added: selectedFile.added, deleted: selectedFile.deleted })}
                     </span>
                     <button type="button" className="dsdr-btn dsdr-btn-primary" disabled={busy} onClick={() => onFileAction('accept', selectedFile.path)}>
                       {t('review.accept')}
@@ -515,23 +825,26 @@ function DiffReviewOverlay({ t }: DiffReviewOverlayProps) {
                   </div>
                   <div className="dsdr-diff-scroll">
                     <pre className="dsdr-pre">
-                      {diffLines(selectedFile.diff).map((line, i) => (
-                        <div key={i} className={`dsdr-line dsdr-line-${line.kind}`}>
-                          {line.text || ' '}
-                        </div>
+                      {gitDiffRows(selectedFile.diff).map((row, i) => (
+                        <div key={i} className={`dsdr-line dsdr-line-${row.kind}`}>{row.text || ' '}</div>
                       ))}
                     </pre>
                   </div>
                 </>
               ) : (
-                <div className="dsdr-diff-empty">{t('review.selectedFile')}</div>
+                <div className="dsdr-diff-empty">{t('review.empty')}</div>
               )}
             </div>
           </div>
-        ) : null}
+        ) : (
+          <div className="dsdr-empty">
+            {error ?? t('review.loadError')}
+            {!status?.isRepo ? <div>{t('review.notRepoHint')}</div> : null}
+          </div>
+        )}
 
         <div className="dsdr-foot">
-          {loading || busy ? <span className="dsdr-spinner" aria-hidden="true" /> : null}
+          {(loading || busy) && tab === 'workspace' ? <span className="dsdr-spinner" aria-hidden="true" /> : null}
           {busy ? <span className="dsdr-notice">{t('review.busy')}</span> : null}
           {notice ? <span className={`dsdr-notice dsdr-notice-${notice.kind}`}>{notice.text}</span> : null}
         </div>
@@ -561,6 +874,7 @@ export function apply(ctx: ClientContext): void {
         id: 'diff-review-overlay',
         order: 10,
         locale: LOCALE_NS,
+        inject: () => ({ sessions: ctx.sessions }),
       },
       DiffReviewOverlay,
     ),

@@ -156,7 +156,8 @@ r = await post('/diff-review/apply', { cwd: repo, action: 'accept', path: '../..
 check('path traversal -> 400', r.status === 400)
 r = await post('/diff-review/apply', { cwd: repo, action: 'bogus' })
 check('bad action -> 400', r.status === 400)
-const notRepo = join(root, '.e2e-notrepo')
+// Non-repo probe must live OUTSIDE this plugin's own git repo.
+const notRepo = join(root, '..', '.e2e-notrepo')
 mkdirSync(notRepo, { recursive: true })
 const nr = await get('/diff-review/status', notRepo)
 check('non-repo -> isRepo false', nr.json.isRepo === false && nr.json.error)
