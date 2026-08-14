@@ -691,13 +691,13 @@ const REVIEW_CSS = `
 .dsdr-pr-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-pr-meta{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
 .dsdr-pr-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere}
-.dsdr-dock{display:flex;flex-direction:column;gap:2px;padding:6px 16px 8px;border-top:1px solid var(--dsw-alias-border-l1);font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary)}
+.dsdr-dock{box-sizing:border-box;display:flex;flex-direction:column;gap:2px;width:min(calc(100% + 32px), var(--dsh-composer-card-max-width, 780px));margin:0 auto;padding:8px 16px 10px;background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2-darkmode-thin);border-bottom:none;border-radius:22px 22px 0 0;box-shadow:var(--dsw-shadow-lv2);font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary)}
 .dsdr-dock-head{display:flex;align-items:center;gap:6px;min-height:22px}
 .dsdr-dock-icon{display:inline-flex;color:var(--dsw-alias-button-info-fill)}
 .dsdr-dock-count{font-weight:600;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary);white-space:nowrap}
 .dsdr-dock-close{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:0}
 .dsdr-dock-close:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsdr-dock-list{display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--dsw-alias-border-l2);padding-top:4px;margin-top:2px;max-height:168px;overflow-y:auto}
+.dsdr-dock-list{display:flex;flex-direction:column;gap:2px;padding-top:4px;margin-top:2px;max-height:168px;overflow-y:auto}
 .dsdr-dock-item{display:flex;flex-direction:column;gap:1px;text-align:left;border:0;background:transparent;border-radius:7px;padding:4px 8px;cursor:pointer;font:inherit}
 .dsdr-dock-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-dock-loc{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono);white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
@@ -1781,7 +1781,7 @@ function FileTreeView<T>(props: {
 // input box, Codex-style — hover the pill to preview, click send to inject.
 // ---------------------------------------------------------------------------
 
-type DiffReviewComposerDockProps = PropsRuntime<'conversation.composer.dock'> & PropsLocale<'diff-review'> & { sessions: ISessions }
+type DiffReviewComposerDockProps = PropsRuntime<'conversation.input.dock'> & PropsLocale<'diff-review'> & { sessions: ISessions }
 
 function DiffReviewComposerDock({ sessionId, useSessions, sessions, input, t }: DiffReviewComposerDockProps) {
   const cwd = useSessions((s: SessionListState) => s.byId[sessionId]?.cwd)
@@ -3387,11 +3387,12 @@ export function apply(ctx: ClientContext): void {
       DiffReviewOverlay,
     ),
   )
-  // Codex-style pending-comments strip fused INSIDE the composer card (its footer seat).
-  ctx.slots.inject('conversation.composer.dock', () =>
+  // Codex-style pending-comments strip at the TOP of the composer, styled as
+  // the card's own surface so it reads as one fused dialog.
+  ctx.slots.inject('conversation.input.dock', () =>
     ctx.slots.register(
       {
-        name: 'conversation.composer.dock',
+        name: 'conversation.input.dock',
         id: 'diff-review-comments-dock',
         order: 20,
         locale: LOCALE_NS,
