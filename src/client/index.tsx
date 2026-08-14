@@ -206,10 +206,17 @@ function asFileDiff(raw: unknown): FileDiffLike | null {
   return { path: rec.path, oldText: typeof oldText === 'string' ? oldText : null, newText: rec.newText }
 }
 
-/** Diff hunks carried by a completed tool result (`resultView.card === 'diff'`). */
-function diffsFromResultView(resultView: ToolResultView | null): FileDiffLike[] {
-  if (!resultView || resultView.card !== 'diff' || !Array.isArray(resultView.diffs)) return []
-  return resultView.diffs.map(asFileDiff).filter((d): d is FileDiffLike => d !== null)
+/** Diff hunks carried by a diff card (call view or result view). */
+function diffsFromDiffCard(view: { card?: unknown; diffs?: unknown } | null | undefined): FileDiffLike[] {
+  if (!view || view.card !== 'diff' || !Array.isArray(view.diffs)) return []
+  return view.diffs.map(asFileDiff).filter((d): d is FileDiffLike => d !== null)
+}
+
+/** Human label for a call whose `call` head was truncated out of the window. */
+function diffCardTitle(view: unknown): string | null {
+  if (!view || typeof view !== 'object') return null
+  const title = (view as Record<string, unknown>).title
+  return typeof title === 'string' && title.trim() ? title.trim() : null
 }
 
 /** Raw `meta.diffs` fallback (the persisted tool/result meta). */
@@ -246,11 +253,14 @@ function mutationPath(tool: string, argsRaw: string): string | null {
 }
 
 /** Extract the changed files from one settled tool result (diff hunks, else path-only). */
-function changesFromToolResult(call: { name: string; argsRaw: string }, node: ToolResultNode): RoundChange[] {
-  const tool = call.name
-  const diffs = diffsFromResultView(node.resultView)
-  const fallbackDiffs = diffs.length === 0 ? diffsFromMeta(node.meta) : []
-  const allDiffs = diffs.length > 0 ? diffs : fallbackDiffs
+function changesFromToolResult(call: { name: string; argsRaw: string } | null, node: ToolResultNode): RoundChange[] {
+  // Long sessions truncate the call head out of the window (call === null), but
+  // the host-computed call/result diff cards still carry the change — read those.
+  const resultDiffs = diffsFromDiffCard(node.resultView)
+  const callDiffs = resultDiffs.length === 0 ? diffsFromDiffCard(node.callView) : []
+  const metaDiffs = resultDiffs.length === 0 && callDiffs.length === 0 ? diffsFromMeta(node.meta) : []
+  const allDiffs = resultDiffs.length > 0 ? resultDiffs : callDiffs.length > 0 ? callDiffs : metaDiffs
+  const tool = call?.name ?? diffCardTitle(node.callView) ?? 'tool'
   if (allDiffs.length > 0) {
     const byPath = new Map<string, RoundChange>()
     for (const d of allDiffs) {
@@ -263,7 +273,7 @@ function changesFromToolResult(call: { name: string; argsRaw: string }, node: To
     }
     return [...byPath.values()]
   }
-  const path = mutationPath(tool, call.argsRaw)
+  const path = call ? mutationPath(tool, call.argsRaw) : null
   return path ? [{ path, tool, hunks: [], hasDiff: false }] : []
 }
 
@@ -288,7 +298,7 @@ export function collectSessionRounds(nodes: readonly ConversationNode[]): Sessio
       rounds.push(current)
       continue
     }
-    if (node.kind !== 'tool-result' || !current || !node.call) continue
+    if (node.kind !== 'tool-result' || !current) continue
     for (const change of changesFromToolResult(node.call, node)) {
       const existing = current.changes.find((c) => c.path === change.path && c.tool === change.tool)
       if (existing) {
@@ -309,7 +319,7 @@ export function countSessionChanges(nodes: readonly ConversationNode[]): number 
   let count = 0
   const seen = new Set<string>()
   for (const node of nodes) {
-    if (node.kind !== 'tool-result' || !node.call) continue
+    if (node.kind !== 'tool-result') continue
     for (const change of changesFromToolResult(node.call, node)) {
       const key = `${change.tool}:${change.path}`
       if (!seen.has(key)) {
