@@ -9,6 +9,8 @@ var Config = z.object({
   applyPath: z.string().default("/diff-review/apply"),
   commitPath: z.string().default("/diff-review/commit"),
   pushPath: z.string().default("/diff-review/push"),
+  historyPath: z.string().default("/diff-review/history"),
+  commitDiffPath: z.string().default("/diff-review/commit-diff"),
   allowedRoots: z.array(z.string()).default([])
 });
 var MAX_BUFFER = 64 * 1024 * 1024;
@@ -243,6 +245,65 @@ async function pushAction(config, raw) {
   }
   return { status: 200, body: { ok: true, output: res.stdout.trim() || res.stderr.trim() || "pushed" } };
 }
+var HISTORY_LIMIT = 50;
+async function collectHistory(cwd) {
+  const upstreamResult = await git(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+  const hasUpstream = upstreamResult.code === 0 && upstreamResult.stdout.trim() !== "";
+  const range = hasUpstream ? "@{u}..HEAD" : "HEAD";
+  const res = await git(cwd, [
+    "log",
+    range,
+    `--max-count=${HISTORY_LIMIT}`,
+    "--pretty=format:%H%x00%h%x00%an%x00%aI%x00%s%x01"
+  ]);
+  if (res.code !== 0) {
+    return { ok: false, commits: [], error: res.stderr.trim() || "git log failed" };
+  }
+  const commits = res.stdout.split("").map((record) => record.trim()).filter(Boolean).map((record) => {
+    const [hash, short, author, date, ...subjectParts] = record.split("\0");
+    return { hash, short, author, date, subject: subjectParts.join("\0") };
+  }).filter((c) => c.hash && c.short);
+  return { ok: true, commits };
+}
+var HASH_RE = /^[0-9a-f]{7,40}$/;
+async function commitDiffAction(config, query) {
+  const cwd = validateWorkspace(query.get("cwd"), config.allowedRoots);
+  if ("error" in cwd) return { status: 400, body: { ok: false, error: cwd.error, diff: "", files: [], added: 0, deleted: 0 } };
+  const hash = query.get("hash") ?? "";
+  if (!HASH_RE.test(hash)) {
+    return { status: 400, body: { ok: false, error: 'invalid "hash"', diff: "", files: [], added: 0, deleted: 0 } };
+  }
+  const [diffRes, numstatRes] = await Promise.all([
+    git(cwd.path, ["show", hash, "--format=", "--no-color"]),
+    git(cwd.path, ["show", hash, "--numstat", "--format="])
+  ]);
+  if (diffRes.code !== 0) {
+    return { status: 400, body: { ok: false, error: diffRes.stderr.trim() || "git show failed", diff: "", files: [], added: 0, deleted: 0 } };
+  }
+  const files = [];
+  let added = 0;
+  let deleted = 0;
+  for (const line of numstatRes.stdout.split("\n")) {
+    const match = /^(\d+|-)\t(\d+|-)\t(.*)$/.exec(line);
+    if (!match) continue;
+    const a = match[1] === "-" ? 0 : Number(match[1]);
+    const d = match[2] === "-" ? 0 : Number(match[2]);
+    added += a;
+    deleted += d;
+    files.push({ path: match[3], status: "M", added: a, deleted: d });
+  }
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      short: hash.slice(0, 7),
+      diff: diffRes.stdout,
+      files,
+      added,
+      deleted
+    }
+  };
+}
 function validateWorkspace(raw, allowedRoots) {
   if (typeof raw !== "string" || !raw.trim()) return { error: 'missing "cwd"' };
   const p = raw.trim();
@@ -364,6 +425,40 @@ function apply(ctx, config) {
         }
       }),
       "diff-review: push route"
+    );
+    httpCtx.effect(
+      () => httpCtx.webServer.register({
+        kind: "exact",
+        path: config.historyPath,
+        handler: async (req, res) => {
+          if (req.method === "GET" || req.method === "HEAD") {
+            const cwd = validateWorkspace(readQuery(req).get("cwd"), config.allowedRoots);
+            if ("error" in cwd) {
+              jsonResponse(res, 400, { ok: false, commits: [], error: cwd.error });
+              return;
+            }
+            jsonResponse(res, 200, await collectHistory(cwd.path));
+            return;
+          }
+          jsonResponse(res, 405, { ok: false, error: "method not allowed" });
+        }
+      }),
+      "diff-review: history route"
+    );
+    httpCtx.effect(
+      () => httpCtx.webServer.register({
+        kind: "exact",
+        path: config.commitDiffPath,
+        handler: async (req, res) => {
+          if (req.method === "GET" || req.method === "HEAD") {
+            const result = await commitDiffAction(config, readQuery(req));
+            jsonResponse(res, result.status, result.body);
+            return;
+          }
+          jsonResponse(res, 405, { ok: false, error: "method not allowed" });
+        }
+      }),
+      "diff-review: commit-diff route"
     );
   });
 }

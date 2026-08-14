@@ -19,7 +19,7 @@ import z from '@deepseek-ai/schemastery'
 import { execFile } from 'node:child_process'
 import { existsSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { isAbsolute, join, resolve, sep } from 'node:path'
-import type { ApplyResponse, DiffFile, GitResponse, StatusResponse } from '../shared/types.ts'
+import type { ApplyResponse, CommitDiffResponse, DiffFile, GitResponse, HistoryResponse, StatusResponse } from '../shared/types.ts'
 
 export const name = 'diff-review'
 
@@ -32,6 +32,10 @@ export interface Config {
   commitPath: string
   /** HTTP route pushing the current branch. */
   pushPath: string
+  /** HTTP route listing local (unpushed) commits. */
+  historyPath: string
+  /** HTTP route returning one commit's diff. */
+  commitDiffPath: string
   /** Non-empty = only workspaces under these roots may be reviewed. */
   allowedRoots: string[]
 }
@@ -41,6 +45,8 @@ export const Config: z<Config> = z.object({
   applyPath: z.string().default('/diff-review/apply'),
   commitPath: z.string().default('/diff-review/commit'),
   pushPath: z.string().default('/diff-review/push'),
+  historyPath: z.string().default('/diff-review/history'),
+  commitDiffPath: z.string().default('/diff-review/commit-diff'),
   allowedRoots: z.array(z.string()).default([]),
 })
 
@@ -345,6 +351,86 @@ async function pushAction(config: Config, raw: unknown): Promise<{ status: numbe
 }
 
 // ---------------------------------------------------------------------------
+// Local history (commits not on the remote) + per-commit diff.
+// ---------------------------------------------------------------------------
+
+const HISTORY_LIMIT = 50
+
+/** List commits ahead of the upstream (all local commits when no upstream). */
+async function collectHistory(cwd: string): Promise<HistoryResponse> {
+  const upstreamResult = await git(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])
+  const hasUpstream = upstreamResult.code === 0 && upstreamResult.stdout.trim() !== ''
+  const range = hasUpstream ? '@{u}..HEAD' : 'HEAD'
+  // Record terminator \x01, field separator \x00 (subjects may contain any
+  // printable char except the control separators).
+  const res = await git(cwd, [
+    'log',
+    range,
+    `--max-count=${HISTORY_LIMIT}`,
+    '--pretty=format:%H%x00%h%x00%an%x00%aI%x00%s%x01',
+  ])
+  if (res.code !== 0) {
+    return { ok: false, commits: [], error: res.stderr.trim() || 'git log failed' }
+  }
+  const commits = res.stdout
+    .split('\x01')
+    .map((record) => record.trim())
+    .filter(Boolean)
+    .map((record) => {
+      const [hash, short, author, date, ...subjectParts] = record.split('\x00')
+      return { hash, short, author, date, subject: subjectParts.join('\x00') }
+    })
+    .filter((c) => c.hash && c.short)
+  return { ok: true, commits }
+}
+
+const HASH_RE = /^[0-9a-f]{7,40}$/
+
+/** Diff of one commit (`git show <hash> --format=`). */
+async function commitDiffAction(config: Config, query: URLSearchParams): Promise<{ status: number; body: CommitDiffResponse }> {
+  const cwd = validateWorkspace(query.get('cwd'), config.allowedRoots)
+  if ('error' in cwd) return { status: 400, body: { ok: false, error: cwd.error, diff: '', files: [], added: 0, deleted: 0 } }
+
+  const hash = query.get('hash') ?? ''
+  if (!HASH_RE.test(hash)) {
+    return { status: 400, body: { ok: false, error: 'invalid "hash"', diff: '', files: [], added: 0, deleted: 0 } }
+  }
+
+  const [diffRes, numstatRes] = await Promise.all([
+    git(cwd.path, ['show', hash, '--format=', '--no-color']),
+    git(cwd.path, ['show', hash, '--numstat', '--format=']),
+  ])
+  if (diffRes.code !== 0) {
+    return { status: 400, body: { ok: false, error: diffRes.stderr.trim() || 'git show failed', diff: '', files: [], added: 0, deleted: 0 } }
+  }
+
+  const files: CommitDiffResponse['files'] = []
+  let added = 0
+  let deleted = 0
+  for (const line of numstatRes.stdout.split('\n')) {
+    const match = /^(\d+|-)\t(\d+|-)\t(.*)$/.exec(line)
+    if (!match) continue
+    const a = match[1] === '-' ? 0 : Number(match[1])
+    const d = match[2] === '-' ? 0 : Number(match[2])
+    added += a
+    deleted += d
+    files.push({ path: match[3], status: 'M', added: a, deleted: d })
+  }
+
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      short: hash.slice(0, 7),
+      diff: diffRes.stdout,
+      files,
+      added,
+      deleted,
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Workspace validation + routes.
 // ---------------------------------------------------------------------------
 
@@ -480,6 +566,42 @@ export function apply(ctx: Context, config: Config): void {
           },
         }),
       'diff-review: push route',
+    )
+    httpCtx.effect(
+      () =>
+        httpCtx.webServer!.register({
+          kind: 'exact',
+          path: config.historyPath,
+          handler: async (req, res) => {
+            if (req.method === 'GET' || req.method === 'HEAD') {
+              const cwd = validateWorkspace(readQuery(req).get('cwd'), config.allowedRoots)
+              if ('error' in cwd) {
+                jsonResponse(res, 400, { ok: false, commits: [], error: cwd.error })
+                return
+              }
+              jsonResponse(res, 200, await collectHistory(cwd.path))
+              return
+            }
+            jsonResponse(res, 405, { ok: false, error: 'method not allowed' })
+          },
+        }),
+      'diff-review: history route',
+    )
+    httpCtx.effect(
+      () =>
+        httpCtx.webServer!.register({
+          kind: 'exact',
+          path: config.commitDiffPath,
+          handler: async (req, res) => {
+            if (req.method === 'GET' || req.method === 'HEAD') {
+              const result = await commitDiffAction(config, readQuery(req))
+              jsonResponse(res, result.status, result.body)
+              return
+            }
+            jsonResponse(res, 405, { ok: false, error: 'method not allowed' })
+          },
+        }),
+      'diff-review: commit-diff route',
     )
   })
 }

@@ -31,7 +31,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { ApplyResponse, DiffFile, GitResponse, StatusResponse } from '../shared/types.ts'
+import type { ApplyResponse, CommitDiffResponse, CommitInfo, DiffFile, GitResponse, HistoryResponse, StatusResponse } from '../shared/types.ts'
 
 export const name = 'diff-review'
 
@@ -43,6 +43,8 @@ const STATUS_URL = 'diff-review/status'
 const APPLY_URL = 'diff-review/apply'
 const COMMIT_URL = 'diff-review/commit'
 const PUSH_URL = 'diff-review/push'
+const HISTORY_URL = 'diff-review/history'
+const COMMIT_DIFF_URL = 'diff-review/commit-diff'
 const STYLE_TAG = 'dsh-plugin-diff-review/review.css'
 
 /** Open state shared between the header trigger (session scope) and the overlay (root scope). */
@@ -472,6 +474,13 @@ const REVIEW_CSS = `
 .dsdr-branch-ahead{color:var(--dsw-alias-state-success-primary)}
 .dsdr-branch-behind{color:var(--dsw-alias-state-warn-primary)}
 .dsdr-branch-sync{color:var(--dsw-alias-state-success-primary)}
+.dsdr-commit{display:flex;align-items:flex-start;gap:8px;width:100%;box-sizing:border-box;border-radius:8px;padding:6px 8px;cursor:pointer;border:0;background:transparent;text-align:left;font:inherit;color:var(--dsw-alias-label-primary)}
+.dsdr-commit:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsdr-commit-selected{background:var(--dsw-alias-interactive-bg-hover)}
+.dsdr-commit-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.dsdr-commit-subject{font-size:12px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.dsdr-commit-meta{font-size:11px;color:var(--dsw-alias-label-tertiary)}
+.dsdr-diff-hash{margin-left:8px;font-size:11px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
 .dsdr-body{display:flex;flex:1;min-height:0}
 .dsdr-files{width:300px;flex:none;border-right:1px solid var(--dsw-alias-border-l1);overflow-y:auto;padding:8px}
 .dsdr-round{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);padding:8px 8px 3px;font-weight:600}
@@ -591,6 +600,11 @@ const zh = {
   'review.sectionChanges': '未暂存',
   'review.sectionBranch': '分支与远程',
   'review.noUpstream': '未设置上游分支',
+  'review.localCommits': '本地提交',
+  'time.now': '刚刚',
+  'time.minutes': '{n} 分钟前',
+  'time.hours': '{n} 小时前',
+  'time.days': '{n} 天前',
   'review.refresh': '刷新',
   'review.close': '关闭',
   'review.busy': '处理中…',
@@ -649,6 +663,11 @@ const en: Record<keyof typeof zh, string> = {
   'review.sectionChanges': 'Changes',
   'review.sectionBranch': 'Branch vs remote',
   'review.noUpstream': 'no upstream',
+  'review.localCommits': 'Local commits',
+  'time.now': 'just now',
+  'time.minutes': '{n} min ago',
+  'time.hours': '{n} h ago',
+  'time.days': '{n} d ago',
   'review.refresh': 'Refresh',
   'review.close': 'Close',
   'review.busy': 'Working…',
@@ -847,6 +866,28 @@ async function runGitAction(cwd: string, action: 'commit' | 'push', message?: st
     body: JSON.stringify(action === 'commit' ? { cwd, message } : { cwd }),
   })
   return (await res.json().catch(() => ({ ok: false, error: 'invalid response' }))) as GitResponse
+}
+
+/** Local (unpushed) commits ahead of the upstream. */
+async function loadHistory(cwd: string): Promise<HistoryResponse> {
+  const res = await fetch(`${HISTORY_URL}?cwd=${encodeURIComponent(cwd)}`, { headers: { accept: 'application/json' } })
+  return (await res.json().catch(() => ({ ok: false, commits: [], error: 'invalid response' }))) as HistoryResponse
+}
+
+/** One commit's unified diff. */
+async function loadCommitDiff(cwd: string, hash: string): Promise<CommitDiffResponse> {
+  const res = await fetch(`${COMMIT_DIFF_URL}?cwd=${encodeURIComponent(cwd)}&hash=${encodeURIComponent(hash)}`, { headers: { accept: 'application/json' } })
+  return (await res.json().catch(() => ({ ok: false, diff: '', files: [], added: 0, deleted: 0, error: 'invalid response' }))) as CommitDiffResponse
+}
+
+/** Short relative time for commit rows ("just now" / "3 min ago" / …). */
+function relativeTime(iso: string, t: (key: keyof typeof zh, params?: Record<string, unknown>) => string): string {
+  const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+  if (minutes < 1) return t('time.now')
+  if (minutes < 60) return t('time.minutes', { n: minutes })
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return t('time.hours', { n: hours })
+  return t('time.days', { n: Math.floor(hours / 24) })
 }
 
 /** Theme-aware dropdown replacing native <select> (native popups ignore the theme). */
@@ -1108,6 +1149,11 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [confirm, setConfirm] = useState<'file' | 'all' | 'push' | null>(null)
   const [commitMessage, setCommitMessage] = useState('')
+  // Local (unpushed) commit history: list + per-commit diff view.
+  const [history, setHistory] = useState<CommitInfo[]>([])
+  const [selectedCommit, setSelectedCommit] = useState<CommitInfo | null>(null)
+  const [commitDiff, setCommitDiff] = useState<CommitDiffResponse | null>(null)
+  const [commitDiffLoading, setCommitDiffLoading] = useState(false)
   // Collapsed directories in the left-hand file tree (shared across tabs).
   const [collapsedDirs, setCollapsedDirs] = useState<ReadonlySet<string>>(() => new Set())
   const toggleDir = useMemo(
@@ -1163,8 +1209,9 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     if (!silent) setLoading(true)
     setError(null)
     try {
-      const next = await loadStatus(cwd)
+      const [next, hist] = await Promise.all([loadStatus(cwd), loadHistory(cwd)])
       setStatus(next)
+      if (hist.ok) setHistory(hist.commits)
       if (next.error && !next.isRepo) setError(next.error)
       setSelected((prev) => (prev && next.files.some((f) => f.path === prev) ? prev : next.files[0]?.path ?? null))
     } catch (e) {
@@ -1234,6 +1281,8 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       className={`dsdr-file${file.path === selected ? ' dsdr-file-selected' : ''}`}
       onClick={() => {
         setSelected(file.path)
+        setSelectedCommit(null)
+        setCommitDiff(null)
         setConfirm(null)
       }}
     >
@@ -1337,6 +1386,21 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
         setBusy(false)
       }
     })()
+  }
+
+  /** Select a local commit and load its diff into the right pane. */
+  const selectCommit = (commit: CommitInfo) => {
+    setSelected(null)
+    setSelectedCommit(commit)
+    setConfirm(null)
+    setCommitDiff(null)
+    setCommitDiffLoading(true)
+    void loadCommitDiff(cwd, commit.hash)
+      .then((d) => {
+        setCommitDiff(d)
+        setCommitDiffLoading(false)
+      })
+      .catch(() => setCommitDiffLoading(false))
   }
 
   const close = () => {
@@ -1556,6 +1620,27 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                   />
                 </>
               ) : null}
+              {history.length > 0 ? (
+                <>
+                  <div className="dsdr-section">{t('review.localCommits')} ({history.length})</div>
+                  {history.map((commit) => (
+                    <button
+                      key={commit.hash}
+                      type="button"
+                      role="option"
+                      aria-selected={selectedCommit?.hash === commit.hash}
+                      className={`dsdr-commit${selectedCommit?.hash === commit.hash ? ' dsdr-commit-selected' : ''}`}
+                      onClick={() => selectCommit(commit)}
+                    >
+                      <span className="dsdr-chip dsdr-chip-m">{commit.short}</span>
+                      <span className="dsdr-commit-main">
+                        <span className="dsdr-commit-subject" title={commit.subject}>{commit.subject}</span>
+                        <span className="dsdr-commit-meta">{commit.author} · {relativeTime(commit.date, t)}</span>
+                      </span>
+                    </button>
+                  ))}
+                </>
+              ) : null}
               <div className="dsdr-section">{t('review.sectionBranch')}</div>
               <div className="dsdr-branch">
                 <span className="dsdr-branch-ref" title={status.upstream ?? undefined}>
@@ -1579,7 +1664,35 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               </div>
             </div>
             <div className="dsdr-diff">
-              {selectedFile ? (
+              {selectedCommit ? (
+                commitDiffLoading ? (
+                  <div className="dsdr-diff-empty">{t('review.busy')}</div>
+                ) : commitDiff?.ok ? (
+                  <>
+                    <div className="dsdr-diff-head">
+                      <span className="dsdr-diff-path" title={selectedCommit.subject}>
+                        {selectedCommit.subject}
+                        <span className="dsdr-diff-hash">{selectedCommit.short}</span>
+                      </span>
+                      <span className="dsdr-tool">
+                        {selectedCommit.author} · {relativeTime(selectedCommit.date, t)}
+                      </span>
+                      <span className="dsdr-diff-stats">
+                        {t('review.changes', { added: commitDiff.added, deleted: commitDiff.deleted })}
+                      </span>
+                    </div>
+                    <div className="dsdr-diff-scroll">
+                      <pre className="dsdr-pre">
+                        {gitDiffRows(commitDiff.diff).map((row, i) => (
+                          <div key={i} className={`dsdr-line dsdr-line-${row.kind}`}>{row.text || ' '}</div>
+                        ))}
+                      </pre>
+                    </div>
+                  </>
+                ) : (
+                  <div className="dsdr-diff-empty">{commitDiff?.error ?? t('review.noDiffData')}</div>
+                )
+              ) : selectedFile ? (
                 <>
                   <div className="dsdr-diff-head">
                     <span className="dsdr-diff-path" title={selectedFile.path}>

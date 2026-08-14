@@ -80,3 +80,41 @@ export interface GitResponse {
   output?: string
   error?: string
 }
+
+/** One local (not-yet-pushed) commit. */
+export interface CommitInfo {
+  /** Full hash. */
+  hash: string
+  /** Short hash (7+ chars). */
+  short: string
+  /** Author name. */
+  author: string
+  /** Author date, ISO 8601. */
+  date: string
+  /** Commit subject. */
+  subject: string
+}
+
+/** GET {historyPath}?cwd=… response — commits ahead of the upstream. */
+export interface HistoryResponse {
+  ok: boolean
+  commits: CommitInfo[]
+  error?: string
+}
+
+/** GET {commitDiffPath}?cwd=…&hash=… response. */
+export interface CommitDiffResponse {
+  ok: boolean
+  /** Short hash echoed back. */
+  short?: string
+  subject?: string
+  /** Unified diff of the commit (git show --format=). */
+  diff: string
+  /** Per-file stats. */
+  files: { path: string; status: string; added: number; deleted: number }[]
+  /** Total added lines across the commit. */
+  added: number
+  /** Total deleted lines across the commit. */
+  deleted: number
+  error?: string
+}
