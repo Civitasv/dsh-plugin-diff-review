@@ -735,6 +735,7 @@ const REVIEW_CSS = `
 .dsdr-dock-head{display:flex;align-items:center;gap:6px;min-height:22px}
 .dsdr-dock-icon{display:inline-flex;color:var(--dsw-alias-button-info-fill)}
 .dsdr-dock-count{font-weight:600;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary);white-space:nowrap}
+.dsdr-dock-flash{color:var(--dsw-alias-state-success-primary);font-size:11px;white-space:nowrap}
 .dsdr-dock-close{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:0}
 .dsdr-dock-close:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsdr-dock-list{display:flex;flex-direction:column;gap:2px;padding-top:4px;margin-top:2px;max-height:168px;overflow-y:auto}
@@ -928,6 +929,8 @@ const zh = {
   'repo.label': '仓库',
   'review.dockComments': '行内评论 {n} 条',
   'review.dockVerdict': '评审结论待发送',
+  'review.copiedFallback': '会话不可用，评论已复制（请粘贴发送）',
+  'review.sendFailed': '评论发送失败',
   'review.dockJump': '点击在评审面板中打开对应变更',
   'review.dockHint': '随下一条消息自动附带（含 diff 与 AI 评审结论）',
   'settings.title': '变动',
@@ -1055,6 +1058,8 @@ const en: Record<keyof typeof zh, string> = {
   'repo.label': 'Repo',
   'review.dockComments': '{n} inline comments',
   'review.dockVerdict': 'verdict pending',
+  'review.copiedFallback': 'Session unavailable — comments copied (paste to send)',
+  'review.sendFailed': 'Failed to send comments',
   'review.dockJump': 'Open the matching change in the review panel',
   'review.dockHint': 'Auto-carried with your next message (diff + AI verdict included)',
   'settings.title': 'Changes',
@@ -1916,11 +1921,12 @@ function FileTreeView<T>(props: {
 
 type DiffReviewComposerDockProps = PropsRuntime<'conversation.input.dock'> & PropsLocale<'diff-review'> & { sessions: ISessions }
 
-function DiffReviewComposerDock({ sessionId, useSessions, sessions, input, t }: DiffReviewComposerDockProps) {
+function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, input, t }: DiffReviewComposerDockProps) {
   const cwd = useSessions((s: SessionListState) => s.byId[sessionId]?.cwd)
   const pending = useSyncExternalStore(pendingCommentsStore.subscribe, pendingCommentsStore.getSnapshot)
   const [hover, setHover] = useState(false)
   const [dismissed, setDismissed] = useState(false)
+  const [carryFlash, setCarryFlash] = useState<string | null>(null)
   const carriedIds = useRef<string | null>(null)
   const carrying = useRef(false)
 
@@ -2005,18 +2011,29 @@ function DiffReviewComposerDock({ sessionId, useSessions, sessions, input, t }: 
   }
 
   const phase = input?.phase
+  const running = useSession((s) => s.running)
+  const userCount = useSession((s) => s.nodes.filter((n) => n.kind === 'user').length)
+  const prevRunning = useRef(running)
+  const prevUserCount = useRef(userCount)
   useEffect(() => {
+    const turnStarted = prevRunning.current === false && running === true
+    prevRunning.current = running
+    const newUserMsg = prevUserCount.current < userCount
+    prevUserCount.current = userCount
+    const phaseHit = phase === 'submitting' || phase === 'adjudicating'
     if (!hasPending || carrying.current) return
-    if (phase !== 'submitting' && phase !== 'adjudicating') return
+    if (!turnStarted && !newUserMsg && !phaseHit) return
     carrying.current = true
     void injectToSession(sessions, sessionId, composeCarriedMessage()).then((outcome) => {
       if (outcome !== 'failed') markSent()
       carrying.current = false
+      setCarryFlash(outcome === 'sent' ? t('review.sentToAgent') : outcome === 'copied' ? t('review.copiedFallback') : t('review.sendFailed'))
+      setTimeout(() => setCarryFlash(null), 3200)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, hasPending])
+  }, [running, userCount, phase, hasPending])
 
-  if (!cwd || !hasPending || dismissed) return null
+  if (!cwd || (!hasPending && !carryFlash) || dismissed) return null
 
   /** Open the review panel at the comment's change block. */
   const focusComment = (comment: ReviewComment) => {
@@ -2036,6 +2053,7 @@ function DiffReviewComposerDock({ sessionId, useSessions, sessions, input, t }: 
           {t('review.dockComments', { n: unsentComments.length })}
           {reviewPending ? ` · ${t('review.dockVerdict')}` : ''}
         </span>
+        {carryFlash ? <span className="dsdr-dock-flash">{carryFlash}</span> : null}
         <span className="dsdr-spacer" />
         <button type="button" className="dsdr-dock-close" aria-label={t('comment.cancel')} onClick={() => setDismissed(true)}>
           <IconX />
