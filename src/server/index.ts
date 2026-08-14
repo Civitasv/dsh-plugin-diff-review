@@ -171,6 +171,17 @@ function countLines(diff: string): { added: number; deleted: number } {
   return { added, deleted }
 }
 
+/** Human-readable byte size (e.g. "64MB"). */
+function formatBytes(n: number): string {
+  const units = ['B', 'KB', 'MB', 'GB']
+  let i = 0
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024
+    i++
+  }
+  return `${Math.round(n)}${units[i]}`
+}
+
 /**
  * Split unified diff text into hunks (each starting at an `@@` header).
  * Trailing empty elements from the final newline are dropped so hunk text is
@@ -987,6 +998,11 @@ function resolveReviewModel(ctx: Context, config: Config, sessionId: string | un
 }
 
 const REVIEW_PRIORITIES: ReviewPriority[] = ['P0', 'P1', 'P2', 'P3']
+
+/** Clamp a value into [0, 1] (for confidence scores). */
+function clamp01(v: number): number {
+  return Math.min(1, Math.max(0, v - 1)) // NOTE: v-1 clamps low values to 0
+}
 
 /** Parse + validate the model's strict-JSON answer against the reviewed files. */
 function parseReviewResponse(raw: string, fileSet: Set<string>): { parsed: boolean; verdict: 'correct' | 'incorrect'; findings: ReviewFinding[] } {

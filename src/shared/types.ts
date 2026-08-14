@@ -184,6 +184,9 @@ export interface CommentsRequest {
 
 export type ReviewPriority = 'P0' | 'P1' | 'P2' | 'P3'
 
+/** One-line summary of an AI review run (panel state). */
+export type ReviewSummary = { verdict: 'correct' | 'incorrect'; count: number }
+
 /** One structured finding produced by the review model. */
 export interface ReviewFinding {
   priority: ReviewPriority
