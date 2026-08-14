@@ -652,12 +652,12 @@ const REVIEW_CSS = `
 .dsdr-diff-scroll{flex:1;min-height:0;overflow:auto;display:flex}
 .dsdr-pre{margin:0;padding:8px 0;font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:var(--dsdr-diff-size, 12px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px);white-space:pre;min-width:100%;flex:1}
 .dsdr-line{display:flex;align-items:flex-start;gap:10px;padding:0 16px;color:var(--dsw-alias-label-primary);position:relative}
-.dsdr-line-num{flex:none;width:34px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);opacity:.75}
+.dsdr-line-num{flex:none;position:relative;width:40px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);opacity:.75}
 .dsdr-line-text{flex:1;min-width:0;white-space:pre}
-.dsdr-comment-add{flex:none;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:6px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:11px;line-height:1;padding:0;margin-top:1px;visibility:hidden}
+.dsdr-comment-add{position:absolute;left:0;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:16px;height:16px;border:0;border-radius:4px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:12px;line-height:1;padding:0;visibility:hidden}
 .dsdr-line:hover .dsdr-comment-add,.dsdr-comment-add:focus-visible{visibility:visible}
-.dsdr-comment-add:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-label-dimmed)}
-.dsdr-comment-has{visibility:visible;background:color-mix(in srgb, var(--dsw-alias-button-info-fill) 16%, transparent);color:var(--dsw-alias-button-info-fill);border-color:transparent;font-variant-numeric:tabular-nums}
+.dsdr-comment-add:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsdr-comment-has{visibility:visible;background:color-mix(in srgb, var(--dsw-alias-button-info-fill) 16%, transparent);color:var(--dsw-alias-button-info-fill);font-variant-numeric:tabular-nums;font-size:10px}
 .dsdr-line-commented{box-shadow:inset 3px 0 0 color-mix(in srgb, var(--dsw-alias-button-info-fill) 70%, transparent)}
 .dsdr-comment-editor{display:flex;flex-direction:column;gap:6px;padding:8px 16px;border-top:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2)}
 .dsdr-comment-input{box-sizing:border-box;width:100%;min-height:52px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);padding:6px 8px;font:inherit;font-size:12px;line-height:18px;resize:vertical}
@@ -759,7 +759,7 @@ const REVIEW_CSS = `
 .dsdr-split-row{position:relative;display:grid;grid-template-columns:1fr 1fr;font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:var(--dsdr-diff-size, 12px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px)}
 .dsdr-split-cell:hover .dsdr-comment-add,.dsdr-split-row:hover .dsdr-comment-add{visibility:visible}
 .dsdr-split-cell{display:flex;gap:8px;padding:0 8px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
-.dsdr-split-num{flex:none;width:36px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px)}
+.dsdr-split-num{flex:none;position:relative;width:42px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px)}
 .dsdr-split-text{flex:1;min-width:0}
 .dsdr-cell-finding{box-shadow:inset 0 0 0 1px var(--dsdr-finding-color, rgba(255,166,87,.7));background:rgba(255,166,87,.08)}
 .dsdr-cell-jump{background:rgba(88,166,255,.16)}
@@ -1412,7 +1412,18 @@ function UnifiedDiff({
                           className={`dsdr-line dsdr-line-${row.kind}${rowComments.length > 0 ? ' dsdr-line-commented' : ''}${findingCls}${jumped ? ' dsdr-line-jump' : ''}`}
                           data-dsdr-line={newLine ?? oldLine ?? undefined}
                         >
-                          <span className="dsdr-line-num">{newLine ?? oldLine ?? ''}</span>
+                          <span className="dsdr-line-num">
+                            {newLine ?? oldLine ?? ''}
+                            {showActions ? (
+                              <CommentLine
+                                count={rowComments.length}
+                                open={commentPopover === key}
+                                onOpen={() => onOpenComment?.(oldLine, newLine)}
+                                onToggle={() => onTogglePopover?.(key)}
+                                t={t}
+                              />
+                            ) : null}
+                          </span>
                           <span className="dsdr-line-text">{row.text || ' '}</span>
                           {showActions ? (
                             <>
@@ -1433,13 +1444,6 @@ function UnifiedDiff({
                                   ↗
                                 </button>
                               ) : null}
-                              <CommentLine
-                                count={rowComments.length}
-                                open={commentPopover === key}
-                                onOpen={() => onOpenComment?.(oldLine, newLine)}
-                                onToggle={() => onTogglePopover?.(key)}
-                                t={t}
-                              />
                             </>
                           ) : null}
                           {showActions && rowComments.length > 0 && commentPopover === key ? (
@@ -3321,21 +3325,25 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                                       className={`dsdr-split-cell ${row.leftNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-del' : ''}${findingCls}${jumped ? ' dsdr-cell-jump' : ''}`}
                                       data-dsdr-line={row.leftNum ?? undefined}
                                     >
-                                      <span className="dsdr-split-num">{row.leftNum ?? ''}</span>
+                                      <span className="dsdr-split-num">
+                                        {row.leftNum ?? ''}
+                                        {commentBtn(leftAnchor, leftComments.length)}
+                                      </span>
                                       <span className="dsdr-split-text">{row.left}</span>
                                       {row.leftNum !== null ? openBtn(row.leftNum) : null}
                                       {rowFindings.length > 0 && row.rightNum === null ? <span className={`dsdr-split-finding dsdr-finding-${rowFindings[0].priority}`}>{rowFindings[0].priority}</span> : null}
-                                      {commentBtn(leftAnchor, leftComments.length)}
                                     </div>
                                     <div
                                       className={`dsdr-split-cell ${row.rightNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-add' : ''}${findingCls}${jumped ? ' dsdr-cell-jump' : ''}`}
                                       data-dsdr-line={row.rightNum ?? undefined}
                                     >
-                                      <span className="dsdr-split-num">{row.rightNum ?? ''}</span>
+                                      <span className="dsdr-split-num">
+                                        {row.rightNum ?? ''}
+                                        {commentBtn(rightAnchor, rightComments.length)}
+                                      </span>
                                       <span className="dsdr-split-text">{row.right}</span>
                                       {row.rightNum !== null ? openBtn(row.rightNum) : null}
                                       {rowFindings.length > 0 && row.rightNum !== null ? <span className={`dsdr-split-finding dsdr-finding-${rowFindings[0].priority}`}>{rowFindings[0].priority}</span> : null}
-                                      {commentBtn(rightAnchor, rightComments.length)}
                                     </div>
                                     {leftComments.length > 0 && commentPopover === leftKey ? (
                                       <div className="dsdr-comment-pop">
