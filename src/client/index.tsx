@@ -1896,12 +1896,14 @@ export function apply(ctx: ClientContext): void {
       DiffReviewOverlay,
     ),
   )
-  ctx.slots.inject('settings.general.item', () =>
+  // The plugin's own settings tab inside 设置 → 插件 (not the General section).
+  ctx.slots.inject('settings.plugins.tab', () =>
     ctx.slots.register(
       {
-        name: 'settings.general.item',
-        id: 'diff-review-preferences',
-        order: 30,
+        name: 'settings.plugins.tab',
+        id: 'diff-review',
+        order: 20,
+        label: () => ctx.locale.bind(LOCALE_NS)('settings.title'),
         locale: LOCALE_NS,
       },
       DiffReviewSettingsRow,
