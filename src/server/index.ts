@@ -19,7 +19,7 @@ import z from '@deepseek-ai/schemastery'
 import { execFile } from 'node:child_process'
 import { existsSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { isAbsolute, join, resolve, sep } from 'node:path'
-import type { ApplyResponse, DiffFile, StatusResponse } from '../shared/types.ts'
+import type { ApplyResponse, DiffFile, GitResponse, StatusResponse } from '../shared/types.ts'
 
 export const name = 'diff-review'
 
@@ -28,6 +28,10 @@ export interface Config {
   statusPath: string
   /** HTTP route applying accept/revert operations. */
   applyPath: string
+  /** HTTP route committing staged changes. */
+  commitPath: string
+  /** HTTP route pushing the current branch. */
+  pushPath: string
   /** Non-empty = only workspaces under these roots may be reviewed. */
   allowedRoots: string[]
 }
@@ -35,6 +39,8 @@ export interface Config {
 export const Config: z<Config> = z.object({
   statusPath: z.string().default('/diff-review/status'),
   applyPath: z.string().default('/diff-review/apply'),
+  commitPath: z.string().default('/diff-review/commit'),
+  pushPath: z.string().default('/diff-review/push'),
   allowedRoots: z.array(z.string()).default([]),
 })
 
@@ -194,10 +200,24 @@ async function collectDiff(cwd: string, change: Change): Promise<DiffFile> {
 async function collectStatus(cwd: string): Promise<StatusResponse> {
   const isRepo = await git(cwd, ['rev-parse', '--is-inside-work-tree'])
   if (isRepo.code !== 0) {
-    return { isRepo: false, branch: null, files: [], error: 'not a git repository' }
+    return { isRepo: false, branch: null, upstream: null, ahead: 0, behind: 0, files: [], error: 'not a git repository' }
   }
   const branchResult = await git(cwd, ['branch', '--show-current'])
   const branch = branchResult.code === 0 && branchResult.stdout.trim() ? branchResult.stdout.trim() : null
+
+  // Upstream + ahead/behind (0/0 when no upstream is configured).
+  const upstreamResult = await git(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])
+  const upstream = upstreamResult.code === 0 && upstreamResult.stdout.trim() ? upstreamResult.stdout.trim() : null
+  let ahead = 0
+  let behind = 0
+  if (upstream) {
+    const [aheadRes, behindRes] = await Promise.all([
+      git(cwd, ['rev-list', '--count', '@{u}..HEAD']),
+      git(cwd, ['rev-list', '--count', 'HEAD..@{u}']),
+    ])
+    ahead = aheadRes.code === 0 ? Number(aheadRes.stdout.trim()) || 0 : 0
+    behind = behindRes.code === 0 ? Number(behindRes.stdout.trim()) || 0 : 0
+  }
 
   const [statusResult, othersResult] = await Promise.all([
     git(cwd, ['status', '--porcelain=v1', '-z']),
@@ -209,7 +229,7 @@ async function collectStatus(cwd: string): Promise<StatusResponse> {
   for (const p of untrackedPaths) changes.push({ path: p, xy: '??' })
 
   const files = await Promise.all(changes.map((change) => collectDiff(cwd, change)))
-  return { isRepo: true, branch, files }
+  return { isRepo: true, branch, upstream, ahead, behind, files }
 }
 
 // ---------------------------------------------------------------------------
@@ -275,6 +295,53 @@ async function applyAction(config: Config, raw: unknown): Promise<{ status: numb
   const error = await revertPath(cwd.path, paths[0], untracked)
   if (error) return { status: 500, body: { ok: false, error } }
   return { status: 200, body: { ok: true } }
+}
+
+// ---------------------------------------------------------------------------
+// Commit + push (Codex-style: stage → commit with a message → push).
+// ---------------------------------------------------------------------------
+
+const MAX_COMMIT_MESSAGE = 2000
+
+/** Commit the staged changes. `git commit` refuses when nothing is staged. */
+async function commitAction(config: Config, raw: unknown): Promise<{ status: number; body: GitResponse }> {
+  const record = isRecord(raw) ? raw : {}
+  const cwd = validateWorkspace(record.cwd, config.allowedRoots)
+  if ('error' in cwd) return { status: 400, body: { ok: false, error: cwd.error } }
+
+  const message = typeof record.message === 'string' ? record.message.trim() : ''
+  if (!message) return { status: 400, body: { ok: false, error: 'missing "message"' } }
+  if (message.length > MAX_COMMIT_MESSAGE) return { status: 400, body: { ok: false, error: `message too long (max ${MAX_COMMIT_MESSAGE} chars)` } }
+  if (message.startsWith('-')) return { status: 400, body: { ok: false, error: 'message must not start with "-"' } }
+
+  const res = await git(cwd.path, ['commit', '-m', message])
+  if (res.code !== 0) {
+    // `nothing to commit` is printed to stdout by git, not stderr.
+    const detail = res.stderr.trim() || res.stdout.trim()
+    return { status: 400, body: { ok: false, error: detail || 'git commit failed' } }
+  }
+  const hashRes = await git(cwd.path, ['rev-parse', '--short', 'HEAD'])
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      hash: hashRes.code === 0 ? hashRes.stdout.trim() : undefined,
+      subject: message.split('\n')[0],
+    },
+  }
+}
+
+/** Push the current branch to its upstream. */
+async function pushAction(config: Config, raw: unknown): Promise<{ status: number; body: GitResponse }> {
+  const record = isRecord(raw) ? raw : {}
+  const cwd = validateWorkspace(record.cwd, config.allowedRoots)
+  if ('error' in cwd) return { status: 400, body: { ok: false, error: cwd.error } }
+
+  const res = await git(cwd.path, ['push'])
+  if (res.code !== 0) {
+    return { status: 500, body: { ok: false, error: res.stderr.trim() || 'git push failed' } }
+  }
+  return { status: 200, body: { ok: true, output: (res.stdout.trim() || res.stderr.trim() || 'pushed') } }
 }
 
 // ---------------------------------------------------------------------------
@@ -371,6 +438,48 @@ export function apply(ctx: Context, config: Config): void {
           },
         }),
       'diff-review: apply route',
+    )
+    httpCtx.effect(
+      () =>
+        httpCtx.webServer!.register({
+          kind: 'exact',
+          path: config.commitPath,
+          handler: async (req, res) => {
+            if (req.method === 'POST') {
+              const raw = await readJsonBody(req)
+              if (raw === null) {
+                jsonResponse(res, 400, { ok: false, error: 'invalid JSON body' })
+                return
+              }
+              const result = await commitAction(config, raw)
+              jsonResponse(res, result.status, result.body)
+              return
+            }
+            jsonResponse(res, 405, { ok: false, error: 'method not allowed' })
+          },
+        }),
+      'diff-review: commit route',
+    )
+    httpCtx.effect(
+      () =>
+        httpCtx.webServer!.register({
+          kind: 'exact',
+          path: config.pushPath,
+          handler: async (req, res) => {
+            if (req.method === 'POST') {
+              const raw = await readJsonBody(req)
+              if (raw === null) {
+                jsonResponse(res, 400, { ok: false, error: 'invalid JSON body' })
+                return
+              }
+              const result = await pushAction(config, raw)
+              jsonResponse(res, result.status, result.body)
+              return
+            }
+            jsonResponse(res, 405, { ok: false, error: 'method not allowed' })
+          },
+        }),
+      'diff-review: push route',
     )
   })
 }

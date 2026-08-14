@@ -33,6 +33,12 @@ export interface StatusResponse {
   isRepo: boolean
   /** Current branch name, or null when not a repo / detached HEAD. */
   branch: string | null
+  /** Upstream branch (`origin/main`), or null when none is configured. */
+  upstream: string | null
+  /** Commits ahead of the upstream (0 when no upstream). */
+  ahead: number
+  /** Commits behind the upstream (0 when no upstream). */
+  behind: number
   files: DiffFile[]
   error?: string
 }
@@ -51,5 +57,26 @@ export interface ApplyRequest {
 
 export interface ApplyResponse {
   ok: boolean
+  error?: string
+}
+
+export type GitAction = 'commit' | 'push'
+
+/** POST {commitPath} / {pushPath} request body. */
+export interface GitRequest {
+  /** Absolute workspace directory (must be inside a git repo). */
+  cwd: string
+  /** Commit message (commit only). */
+  message?: string
+}
+
+export interface GitResponse {
+  ok: boolean
+  /** Short commit hash (commit only). */
+  hash?: string
+  /** Commit subject (commit only). */
+  subject?: string
+  /** Push output (push only). */
+  output?: string
   error?: string
 }

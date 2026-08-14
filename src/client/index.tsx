@@ -31,7 +31,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { ApplyResponse, DiffFile, StatusResponse } from '../shared/types.ts'
+import type { ApplyResponse, DiffFile, GitResponse, StatusResponse } from '../shared/types.ts'
 
 export const name = 'diff-review'
 
@@ -41,6 +41,8 @@ export const inject = ['sessions', 'slots', 'locale']
 const LOCALE_NS = 'diff-review'
 const STATUS_URL = 'diff-review/status'
 const APPLY_URL = 'diff-review/apply'
+const COMMIT_URL = 'diff-review/commit'
+const PUSH_URL = 'diff-review/push'
 const STYLE_TAG = 'dsh-plugin-diff-review/review.css'
 
 /** Open state shared between the header trigger (session scope) and the overlay (root scope). */
@@ -458,6 +460,9 @@ const REVIEW_CSS = `
 .dsdr-btn-danger:hover:not(:disabled){color:var(--dsw-alias-state-error-primary)}
 .dsdr-btn-confirm{border-color:var(--dsw-alias-state-error-primary);background:var(--dsw-alias-state-error-primary);color:var(--dsw-static-neutral-bluish-50)}
 .dsdr-btn-confirm:hover:not(:disabled){background:var(--dsw-alias-state-error-primary);color:var(--dsw-static-neutral-bluish-50)}
+.dsdr-commit-input{box-sizing:border-box;width:200px;min-height:28px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);padding:3px 10px;font:inherit;font-size:12px;line-height:18px}
+.dsdr-commit-input::placeholder{color:var(--dsw-alias-label-caption)}
+.dsdr-commit-input:focus{outline:none;border-color:var(--dsw-alias-brand-primary)}
 .dsdr-body{display:flex;flex:1;min-height:0}
 .dsdr-files{width:300px;flex:none;border-right:1px solid var(--dsw-alias-border-l1);overflow-y:auto;padding:8px}
 .dsdr-round{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);padding:8px 8px 3px;font-weight:600}
@@ -563,6 +568,16 @@ const zh = {
   'review.revertAll': '全部丢弃',
   'review.confirmRevert': '再次点击确认丢弃',
   'review.confirmRevertAll': '再次点击确认全部丢弃',
+  'review.commit': '提交',
+  'review.commitPlaceholder': '提交说明…',
+  'review.push': '推送',
+  'review.confirmPush': '再次点击确认推送',
+  'review.committed': '已提交 {summary}',
+  'review.commitFailed': '提交失败',
+  'review.pushed': '已推送',
+  'review.pushFailed': '推送失败',
+  'review.ahead': '领先 {n}',
+  'review.behind': '落后 {n}',
   'review.refresh': '刷新',
   'review.close': '关闭',
   'review.busy': '处理中…',
@@ -607,6 +622,16 @@ const en: Record<keyof typeof zh, string> = {
   'review.revertAll': 'Revert all',
   'review.confirmRevert': 'Click again to confirm revert',
   'review.confirmRevertAll': 'Click again to confirm revert all',
+  'review.commit': 'Commit',
+  'review.commitPlaceholder': 'Commit message…',
+  'review.push': 'Push',
+  'review.confirmPush': 'Click again to confirm push',
+  'review.committed': 'Committed {summary}',
+  'review.commitFailed': 'Commit failed',
+  'review.pushed': 'Pushed',
+  'review.pushFailed': 'Push failed',
+  'review.ahead': '{n} ahead',
+  'review.behind': '{n} behind',
   'review.refresh': 'Refresh',
   'review.close': 'Close',
   'review.busy': 'Working…',
@@ -795,6 +820,16 @@ async function applyChanges(cwd: string, action: 'accept' | 'revert', path?: str
     body: JSON.stringify({ cwd, action, path }),
   })
   return (await res.json().catch(() => ({ ok: false, error: 'invalid response' }))) as ApplyResponse
+}
+
+async function runGitAction(cwd: string, action: 'commit' | 'push', message?: string): Promise<GitResponse> {
+  const url = action === 'commit' ? COMMIT_URL : PUSH_URL
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(action === 'commit' ? { cwd, message } : { cwd }),
+  })
+  return (await res.json().catch(() => ({ ok: false, error: 'invalid response' }))) as GitResponse
 }
 
 /** Theme-aware dropdown replacing native <select> (native popups ignore the theme). */
@@ -1052,7 +1087,8 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
-  const [confirm, setConfirm] = useState<'file' | 'all' | null>(null)
+  const [confirm, setConfirm] = useState<'file' | 'all' | 'push' | null>(null)
+  const [commitMessage, setCommitMessage] = useState('')
   // Collapsed directories in the left-hand file tree (shared across tabs).
   const [collapsedDirs, setCollapsedDirs] = useState<ReadonlySet<string>>(() => new Set())
   const toggleDir = useMemo(
@@ -1157,6 +1193,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   }, [notice])
 
   const files = status?.isRepo ? status.files : []
+  const stagedCount = files.filter((f) => f.staged).length
   // NOTE: hooks must all run before the early return below (React hook order).
   const workspaceTree = useMemo(() => buildFileTree(files, (f) => f.path), [files])
 
@@ -1206,6 +1243,58 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       return
     }
     void runApply(action)
+  }
+
+  /** Commit the staged changes with the entered message. */
+  const onCommit = async () => {
+    const message = commitMessage.trim()
+    if (!message || busy) return
+    setBusy(true)
+    setNotice(null)
+    setConfirm(null)
+    try {
+      const result = await runGitAction(cwd, 'commit', message)
+      if (result.ok) {
+        setCommitMessage('')
+        const summary = result.hash ? `${result.hash} ${result.subject ?? ''}`.trim() : (result.subject ?? '')
+        setNotice({ kind: 'ok', text: t('review.committed', { summary }) })
+        await loadWorkspace(true)
+      } else {
+        setNotice({ kind: 'error', text: result.error || t('review.commitFailed') })
+      }
+    } catch (e) {
+      setNotice({ kind: 'error', text: e instanceof Error ? e.message : t('review.commitFailed') })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Push the current branch (double-click to confirm). */
+  const onPush = () => {
+    if (busy) return
+    if (confirm !== 'push') {
+      setConfirm('push')
+      setTimeout(() => setConfirm((c) => (c === 'push' ? null : c)), 2500)
+      return
+    }
+    void (async () => {
+      setConfirm(null)
+      setBusy(true)
+      setNotice(null)
+      try {
+        const result = await runGitAction(cwd, 'push')
+        if (result.ok) {
+          setNotice({ kind: 'ok', text: t('review.pushed') })
+        } else {
+          setNotice({ kind: 'error', text: result.error || t('review.pushFailed') })
+        }
+        await loadWorkspace(true)
+      } catch (e) {
+        setNotice({ kind: 'error', text: e instanceof Error ? e.message : t('review.pushFailed') })
+      } finally {
+        setBusy(false)
+      }
+    })()
   }
 
   const close = () => {
@@ -1279,7 +1368,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
             {tab === 'session'
               ? t('review.sessionStats', { rounds: rounds.length, files: totalSessionFiles })
               : status?.isRepo
-                ? `${status.branch ?? t('review.detached')} · ${t('review.changes', { added: totalAdded, deleted: totalDeleted })}`
+                ? `${status.branch ?? t('review.detached')} · ${t('review.changes', { added: totalAdded, deleted: totalDeleted })}${status.ahead > 0 ? ` · ${t('review.ahead', { n: status.ahead })}` : ''}${status.behind > 0 ? ` · ${t('review.behind', { n: status.behind })}` : ''}`
                 : t('review.notRepo')}
           </span>
           <span className="dsdr-spacer" />
@@ -1295,6 +1384,28 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                 onClick={() => onAllAction('revert')}
               >
                 {confirm === 'all' ? t('review.confirmRevertAll') : t('review.revertAll')}
+              </button>
+              <input
+                className="dsdr-commit-input"
+                type="text"
+                value={commitMessage}
+                placeholder={t('review.commitPlaceholder')}
+                disabled={busy}
+                onChange={(event) => setCommitMessage(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void onCommit()
+                }}
+              />
+              <button type="button" className="dsdr-btn" disabled={busy || !commitMessage.trim() || stagedCount === 0} onClick={() => void onCommit()}>
+                {t('review.commit')}
+              </button>
+              <button
+                type="button"
+                className={`dsdr-btn${confirm === 'push' ? ' dsdr-btn-confirm' : ''}`}
+                disabled={busy || (status?.ahead ?? 0) === 0}
+                onClick={onPush}
+              >
+                {confirm === 'push' ? t('review.confirmPush') : `${t('review.push')}${(status?.ahead ?? 0) > 0 ? ` (${status?.ahead ?? 0})` : ''}`}
               </button>
               <button type="button" className="dsdr-btn" disabled={busy} onClick={() => void loadWorkspace()}>
                 <IconRefresh />

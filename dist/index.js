@@ -7,6 +7,8 @@ var name = "diff-review";
 var Config = z.object({
   statusPath: z.string().default("/diff-review/status"),
   applyPath: z.string().default("/diff-review/apply"),
+  commitPath: z.string().default("/diff-review/commit"),
+  pushPath: z.string().default("/diff-review/push"),
   allowedRoots: z.array(z.string()).default([])
 });
 var MAX_BUFFER = 64 * 1024 * 1024;
@@ -130,10 +132,22 @@ async function collectDiff(cwd, change) {
 async function collectStatus(cwd) {
   const isRepo = await git(cwd, ["rev-parse", "--is-inside-work-tree"]);
   if (isRepo.code !== 0) {
-    return { isRepo: false, branch: null, files: [], error: "not a git repository" };
+    return { isRepo: false, branch: null, upstream: null, ahead: 0, behind: 0, files: [], error: "not a git repository" };
   }
   const branchResult = await git(cwd, ["branch", "--show-current"]);
   const branch = branchResult.code === 0 && branchResult.stdout.trim() ? branchResult.stdout.trim() : null;
+  const upstreamResult = await git(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+  const upstream = upstreamResult.code === 0 && upstreamResult.stdout.trim() ? upstreamResult.stdout.trim() : null;
+  let ahead = 0;
+  let behind = 0;
+  if (upstream) {
+    const [aheadRes, behindRes] = await Promise.all([
+      git(cwd, ["rev-list", "--count", "@{u}..HEAD"]),
+      git(cwd, ["rev-list", "--count", "HEAD..@{u}"])
+    ]);
+    ahead = aheadRes.code === 0 ? Number(aheadRes.stdout.trim()) || 0 : 0;
+    behind = behindRes.code === 0 ? Number(behindRes.stdout.trim()) || 0 : 0;
+  }
   const [statusResult, othersResult] = await Promise.all([
     git(cwd, ["status", "--porcelain=v1", "-z"]),
     git(cwd, ["ls-files", "--others", "--exclude-standard", "-z"])
@@ -142,7 +156,7 @@ async function collectStatus(cwd) {
   const untrackedPaths = othersResult.stdout.split("\0").filter(Boolean);
   for (const p of untrackedPaths) changes.push({ path: p, xy: "??" });
   const files = await Promise.all(changes.map((change) => collectDiff(cwd, change)));
-  return { isRepo: true, branch, files };
+  return { isRepo: true, branch, upstream, ahead, behind, files };
 }
 async function revertPath(cwd, path, untracked) {
   const abs = resolve(cwd, path);
@@ -194,6 +208,40 @@ async function applyAction(config, raw) {
   const error = await revertPath(cwd.path, paths[0], untracked);
   if (error) return { status: 500, body: { ok: false, error } };
   return { status: 200, body: { ok: true } };
+}
+var MAX_COMMIT_MESSAGE = 2e3;
+async function commitAction(config, raw) {
+  const record = isRecord(raw) ? raw : {};
+  const cwd = validateWorkspace(record.cwd, config.allowedRoots);
+  if ("error" in cwd) return { status: 400, body: { ok: false, error: cwd.error } };
+  const message = typeof record.message === "string" ? record.message.trim() : "";
+  if (!message) return { status: 400, body: { ok: false, error: 'missing "message"' } };
+  if (message.length > MAX_COMMIT_MESSAGE) return { status: 400, body: { ok: false, error: `message too long (max ${MAX_COMMIT_MESSAGE} chars)` } };
+  if (message.startsWith("-")) return { status: 400, body: { ok: false, error: 'message must not start with "-"' } };
+  const res = await git(cwd.path, ["commit", "-m", message]);
+  if (res.code !== 0) {
+    const detail = res.stderr.trim() || res.stdout.trim();
+    return { status: 400, body: { ok: false, error: detail || "git commit failed" } };
+  }
+  const hashRes = await git(cwd.path, ["rev-parse", "--short", "HEAD"]);
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      hash: hashRes.code === 0 ? hashRes.stdout.trim() : void 0,
+      subject: message.split("\n")[0]
+    }
+  };
+}
+async function pushAction(config, raw) {
+  const record = isRecord(raw) ? raw : {};
+  const cwd = validateWorkspace(record.cwd, config.allowedRoots);
+  if ("error" in cwd) return { status: 400, body: { ok: false, error: cwd.error } };
+  const res = await git(cwd.path, ["push"]);
+  if (res.code !== 0) {
+    return { status: 500, body: { ok: false, error: res.stderr.trim() || "git push failed" } };
+  }
+  return { status: 200, body: { ok: true, output: res.stdout.trim() || res.stderr.trim() || "pushed" } };
 }
 function validateWorkspace(raw, allowedRoots) {
   if (typeof raw !== "string" || !raw.trim()) return { error: 'missing "cwd"' };
@@ -276,6 +324,46 @@ function apply(ctx, config) {
         }
       }),
       "diff-review: apply route"
+    );
+    httpCtx.effect(
+      () => httpCtx.webServer.register({
+        kind: "exact",
+        path: config.commitPath,
+        handler: async (req, res) => {
+          if (req.method === "POST") {
+            const raw = await readJsonBody(req);
+            if (raw === null) {
+              jsonResponse(res, 400, { ok: false, error: "invalid JSON body" });
+              return;
+            }
+            const result = await commitAction(config, raw);
+            jsonResponse(res, result.status, result.body);
+            return;
+          }
+          jsonResponse(res, 405, { ok: false, error: "method not allowed" });
+        }
+      }),
+      "diff-review: commit route"
+    );
+    httpCtx.effect(
+      () => httpCtx.webServer.register({
+        kind: "exact",
+        path: config.pushPath,
+        handler: async (req, res) => {
+          if (req.method === "POST") {
+            const raw = await readJsonBody(req);
+            if (raw === null) {
+              jsonResponse(res, 400, { ok: false, error: "invalid JSON body" });
+              return;
+            }
+            const result = await pushAction(config, raw);
+            jsonResponse(res, result.status, result.body);
+            return;
+          }
+          jsonResponse(res, 405, { ok: false, error: "method not allowed" });
+        }
+      }),
+      "diff-review: push route"
     );
   });
 }
