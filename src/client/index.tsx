@@ -463,6 +463,15 @@ const REVIEW_CSS = `
 .dsdr-commit-input{box-sizing:border-box;width:200px;min-height:28px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);padding:3px 10px;font:inherit;font-size:12px;line-height:18px}
 .dsdr-commit-input::placeholder{color:var(--dsw-alias-label-caption)}
 .dsdr-commit-input:focus{outline:none;border-color:var(--dsw-alias-brand-primary)}
+.dsdr-section{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);padding:10px 8px 3px;font-weight:600;display:flex;align-items:center;gap:6px}
+.dsdr-section:first-child{padding-top:4px}
+.dsdr-branch{display:flex;align-items:center;gap:8px;padding:4px 8px 8px;flex-wrap:wrap}
+.dsdr-branch-ref{font-size:12px;color:var(--dsw-alias-label-secondary);font-family:var(--dsw-font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;display:inline-flex;align-items:center;gap:5px}
+.dsdr-branch-arrow{color:var(--dsw-alias-label-tertiary)}
+.dsdr-branch-stat{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-variant-numeric:tabular-nums}
+.dsdr-branch-ahead{color:var(--dsw-alias-state-success-primary)}
+.dsdr-branch-behind{color:var(--dsw-alias-state-warn-primary)}
+.dsdr-branch-sync{color:var(--dsw-alias-state-success-primary)}
 .dsdr-body{display:flex;flex:1;min-height:0}
 .dsdr-files{width:300px;flex:none;border-right:1px solid var(--dsw-alias-border-l1);overflow-y:auto;padding:8px}
 .dsdr-round{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);padding:8px 8px 3px;font-weight:600}
@@ -578,6 +587,10 @@ const zh = {
   'review.pushFailed': '推送失败',
   'review.ahead': '领先 {n}',
   'review.behind': '落后 {n}',
+  'review.sectionStaged': '已暂存',
+  'review.sectionChanges': '未暂存',
+  'review.sectionBranch': '分支与远程',
+  'review.noUpstream': '未设置上游分支',
   'review.refresh': '刷新',
   'review.close': '关闭',
   'review.busy': '处理中…',
@@ -632,6 +645,10 @@ const en: Record<keyof typeof zh, string> = {
   'review.pushFailed': 'Push failed',
   'review.ahead': '{n} ahead',
   'review.behind': '{n} behind',
+  'review.sectionStaged': 'Staged',
+  'review.sectionChanges': 'Changes',
+  'review.sectionBranch': 'Branch vs remote',
+  'review.noUpstream': 'no upstream',
   'review.refresh': 'Refresh',
   'review.close': 'Close',
   'review.busy': 'Working…',
@@ -1193,15 +1210,38 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   }, [notice])
 
   const files = status?.isRepo ? status.files : []
-  const stagedCount = files.filter((f) => f.staged).length
+  const stagedFiles = useMemo(() => files.filter((f) => f.staged), [files])
+  const unstagedFiles = useMemo(() => files.filter((f) => !f.staged), [files])
+  const stagedCount = stagedFiles.length
   // NOTE: hooks must all run before the early return below (React hook order).
-  const workspaceTree = useMemo(() => buildFileTree(files, (f) => f.path), [files])
+  const stagedTree = useMemo(() => buildFileTree(stagedFiles, (f) => f.path), [stagedFiles])
+  const unstagedTree = useMemo(() => buildFileTree(unstagedFiles, (f) => f.path), [unstagedFiles])
 
   if (!storeState.open || !cwd) return null
 
   const selectedFile = files.find((f) => f.path === selected) ?? null
   const totalAdded = files.reduce((n, f) => n + f.added, 0)
   const totalDeleted = files.reduce((n, f) => n + f.deleted, 0)
+
+  /** Leaf row shared by the staged/unstaged file trees. */
+  const workspaceLeaf = ({ item: file, name }: { item: DiffFile; name: string }) => (
+    <button
+      type="button"
+      role="option"
+      aria-selected={file.path === selected}
+      className={`dsdr-file${file.path === selected ? ' dsdr-file-selected' : ''}`}
+      onClick={() => {
+        setSelected(file.path)
+        setConfirm(null)
+      }}
+    >
+      <span className={`dsdr-chip ${chipClass(file.status)}`}>{file.untracked ? '??' : file.status}</span>
+      <span className="dsdr-file-name" title={file.path}>{name}</span>
+      <span className="dsdr-file-stat">
+        {file.binary ? t('review.binary') : t('review.changes', { added: file.added, deleted: file.deleted })}
+      </span>
+    </button>
+  )
 
   const runApply = async (action: 'accept' | 'revert', path?: string) => {
     setBusy(true)
@@ -1399,14 +1439,6 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               <button type="button" className="dsdr-btn" disabled={busy || !commitMessage.trim() || stagedCount === 0} onClick={() => void onCommit()}>
                 {t('review.commit')}
               </button>
-              <button
-                type="button"
-                className={`dsdr-btn${confirm === 'push' ? ' dsdr-btn-confirm' : ''}`}
-                disabled={busy || (status?.ahead ?? 0) === 0}
-                onClick={onPush}
-              >
-                {confirm === 'push' ? t('review.confirmPush') : `${t('review.push')}${(status?.ahead ?? 0) > 0 ? ` (${status?.ahead ?? 0})` : ''}`}
-              </button>
               <button type="button" className="dsdr-btn" disabled={busy} onClick={() => void loadWorkspace()}>
                 <IconRefresh />
                 {t('review.refresh')}
@@ -1495,35 +1527,54 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
             {error}
             <div>{t('review.notRepoHint')}</div>
           </div>
-        ) : status?.isRepo && files.length === 0 ? (
-          <div className="dsdr-empty">{t('review.empty')}</div>
-        ) : status?.isRepo && files.length > 0 ? (
+        ) : status?.isRepo ? (
           <div className="dsdr-body">
             <div className="dsdr-files" role="listbox" aria-label={t('tab.workspace')}>
-              <FileTreeView
-                nodes={workspaceTree}
-                collapsed={collapsedDirs}
-                onToggleDir={toggleDir}
-                depth={0}
-                renderLeaf={({ item: file, name }) => (
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={file.path === selected}
-                    className={`dsdr-file${file.path === selected ? ' dsdr-file-selected' : ''}`}
-                    onClick={() => {
-                      setSelected(file.path)
-                      setConfirm(null)
-                    }}
-                  >
-                    <span className={`dsdr-chip ${chipClass(file.status)}`}>{file.untracked ? '??' : file.status}</span>
-                    <span className="dsdr-file-name" title={file.path}>{name}</span>
-                    <span className="dsdr-file-stat">
-                      {file.binary ? t('review.binary') : t('review.changes', { added: file.added, deleted: file.deleted })}
-                    </span>
-                  </button>
-                )}
-              />
+              {stagedFiles.length > 0 ? (
+                <>
+                  <div className="dsdr-section">{t('review.sectionStaged')} ({stagedFiles.length})</div>
+                  <FileTreeView
+                    nodes={stagedTree}
+                    collapsed={collapsedDirs}
+                    onToggleDir={toggleDir}
+                    depth={0}
+                    renderLeaf={workspaceLeaf}
+                  />
+                </>
+              ) : null}
+              {unstagedFiles.length > 0 ? (
+                <>
+                  <div className="dsdr-section">{t('review.sectionChanges')} ({unstagedFiles.length})</div>
+                  <FileTreeView
+                    nodes={unstagedTree}
+                    collapsed={collapsedDirs}
+                    onToggleDir={toggleDir}
+                    depth={0}
+                    renderLeaf={workspaceLeaf}
+                  />
+                </>
+              ) : null}
+              <div className="dsdr-section">{t('review.sectionBranch')}</div>
+              <div className="dsdr-branch">
+                <span className="dsdr-branch-ref" title={status.upstream ?? undefined}>
+                  {status.branch ?? t('review.detached')}
+                  <span className="dsdr-branch-arrow">→</span>
+                  {status.upstream ?? t('review.noUpstream')}
+                </span>
+                <span className="dsdr-branch-stat">
+                  {status.ahead > 0 ? <span className="dsdr-branch-ahead">{t('review.ahead', { n: status.ahead })}</span> : null}
+                  {status.behind > 0 ? <span className="dsdr-branch-behind">{t('review.behind', { n: status.behind })}</span> : null}
+                  {status.ahead === 0 && status.behind === 0 && status.upstream ? <span className="dsdr-branch-sync">✓</span> : null}
+                </span>
+                <button
+                  type="button"
+                  className={`dsdr-btn${confirm === 'push' ? ' dsdr-btn-confirm' : ''}`}
+                  disabled={busy || (status?.ahead ?? 0) === 0}
+                  onClick={onPush}
+                >
+                  {confirm === 'push' ? t('review.confirmPush') : `${t('review.push')}${(status?.ahead ?? 0) > 0 ? ` (${status?.ahead ?? 0})` : ''}`}
+                </button>
+              </div>
             </div>
             <div className="dsdr-diff">
               {selectedFile ? (
