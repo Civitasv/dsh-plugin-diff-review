@@ -779,7 +779,8 @@ const REVIEW_CSS = `
 .dsdr-split-hunk{color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-fill-l2);font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:11px;line-height:18px;padding:2px 16px}
 .dsdr-split-row{position:relative;display:grid;grid-template-columns:1fr 1fr;font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:var(--dsdr-diff-size, 12px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px)}
 .dsdr-split-cell:hover .dsdr-comment-add,.dsdr-split-row:hover .dsdr-comment-add{visibility:visible}
-.dsdr-split-cell{display:flex;gap:8px;padding:0 8px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
+.dsdr-split-cell{display:flex;flex-wrap:wrap;gap:8px;padding:0 8px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
+.dsdr-split-cell>.dsdr-comment-editor{flex:0 0 100%;padding:6px 8px}
 .dsdr-split-num{flex:none;position:relative;width:42px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px)}
 .dsdr-split-text{flex:1;min-width:0}
 .dsdr-cell-finding{box-shadow:inset 0 0 0 1px var(--dsdr-finding-color, rgba(255,166,87,.7));background:rgba(255,166,87,.08)}
@@ -3052,6 +3053,10 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                                           </span>
                                           <span className="dsdr-split-text">{row.left}</span>
                                           {row.leftNum !== null ? openBtn(row.leftNum) : null}
+                                          {leftComments.length > 0 ? leftComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
+                                          {commentEditor && leftKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` ? (
+                                            <CommentEditor text={commentText} onText={setCommentText} onSave={() => void saveComment()} onCancel={cancelComment} busy={busy} t={t} />
+                                          ) : null}
                                         </div>
                                         <div
                                           className={`dsdr-split-cell ${row.rightNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-add' : ''}`}
@@ -3063,13 +3068,12 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                                           </span>
                                           <span className="dsdr-split-text">{row.right}</span>
                                           {row.rightNum !== null ? openBtn(row.rightNum) : null}
+                                          {rightComments.length > 0 ? rightComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
+                                          {commentEditor && rightKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` ? (
+                                            <CommentEditor text={commentText} onText={setCommentText} onSave={() => void saveComment()} onCancel={cancelComment} busy={busy} t={t} />
+                                          ) : null}
                                         </div>
                                         </div>
-                                        {leftComments.length > 0 ? leftComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
-                                        {rightComments.length > 0 ? rightComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
-                                      {commentEditor && (leftKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` || rightKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}`) ? (
-                                        <CommentEditor text={commentText} onText={setCommentText} onSave={() => void saveComment()} onCancel={cancelComment} busy={busy} t={t} />
-                                      ) : null}
                                     </Fragment>
                                   )
                                 })}
@@ -3499,6 +3503,10 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                                       <span className="dsdr-split-text">{row.left}</span>
                                       {row.leftNum !== null ? openBtn(row.leftNum) : null}
                                       {rowFindings.length > 0 && row.rightNum === null ? <span className={`dsdr-split-finding dsdr-finding-${rowFindings[0].priority}`}>{rowFindings[0].priority}</span> : null}
+                                      {leftComments.length > 0 ? leftComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
+                                      {commentEditor && leftKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` ? (
+                                        <CommentEditor text={commentText} onText={setCommentText} onSave={() => void saveComment()} onCancel={cancelComment} busy={busy} t={t} />
+                                      ) : null}
                                     </div>
                                     <div
                                       className={`dsdr-split-cell ${row.rightNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-add' : ''}${findingCls}${jumped ? ' dsdr-cell-jump' : ''}`}
@@ -3511,13 +3519,12 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                                       <span className="dsdr-split-text">{row.right}</span>
                                       {row.rightNum !== null ? openBtn(row.rightNum) : null}
                                       {rowFindings.length > 0 && row.rightNum !== null ? <span className={`dsdr-split-finding dsdr-finding-${rowFindings[0].priority}`}>{rowFindings[0].priority}</span> : null}
+                                      {rightComments.length > 0 ? rightComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
+                                      {commentEditor && rightKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` ? (
+                                        <CommentEditor text={commentText} onText={setCommentText} onSave={() => void saveComment()} onCancel={cancelComment} busy={busy} t={t} />
+                                      ) : null}
                                     </div>
                                     </div>
-                                    {leftComments.length > 0 ? leftComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
-                                    {rightComments.length > 0 ? rightComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
-                                  {commentEditor && (leftKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` || rightKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}`) ? (
-                                    <CommentEditor text={commentText} onText={setCommentText} onSave={() => void saveComment()} onCancel={cancelComment} busy={busy} t={t} />
-                                  ) : null}
                                   {(review?.findings ?? [])
                                     .filter((f) => f.file === selectedFile.path && f.lineStart === (row.leftNum ?? row.rightNum))
                                     .map((f, fi) => (
