@@ -24,7 +24,7 @@ import type { ClientContext, ISessions, SessionListState } from '@deepseek-ai/ds
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConversationNode, ToolResultNode, UserMessageNode } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ToolResultView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { SessionId, ToolResultView } from '@deepseek-ai/dsh-api-remotes/client'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only imports pulling the header-action slot contract, the shell.overlay
 // contract, the settings.general.item slot contract and the standard kit.
@@ -62,6 +62,36 @@ const overlayStore = createSnapshotStore<{ open: boolean; cwd: string | null; ke
   cwd: null,
   key: 0,
 })
+
+/**
+ * Pending inline comments surfaced above the composer (Codex-style). The
+ * review overlay syncs its workspace comments here; the composer dock reads
+ * them for the current session's workspace.
+ */
+const pendingCommentsStore = createSnapshotStore<{ cwd: string | null; comments: ReviewComment[] }>({
+  cwd: null,
+  comments: [],
+})
+
+/** Inject text into a session as a user message; falls back to the clipboard. */
+async function injectToSession(sessions: ISessions | undefined, sessionId: SessionId | null, text: string): Promise<'sent' | 'copied' | 'failed'> {
+  const binding = sessionId ? sessions?.binding(sessionId) : undefined
+  const session = binding?.session
+  if (session) {
+    try {
+      const result = await session.prompt([{ type: 'text', text }], 'queue')
+      if (result.ok) return 'sent'
+    } catch {
+      // fall through to the copy fallback
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    return 'copied'
+  } catch {
+    return 'failed'
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Review preferences (font / size / panel geometry), shared by the overlay
@@ -650,6 +680,15 @@ const REVIEW_CSS = `
 .dsdr-pr-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-pr-meta{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
 .dsdr-pr-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere}
+.dsdr-dock{display:flex;align-items:center;gap:8px;padding:6px 16px;font-size:12px;line-height:18px;flex-wrap:wrap}
+.dsdr-dock-pill{position:relative;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:rgba(88,166,255,.12);color:var(--dsw-alias-label-secondary);padding:2px 12px;font:inherit;font-size:12px;line-height:18px;cursor:default;user-select:none}
+.dsdr-dock-pop{position:absolute;z-index:40;left:0;top:calc(100% + 6px);min-width:320px;max-width:min(520px,90vw);max-height:280px;overflow-y:auto;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-specific-menu);border-radius:10px;box-shadow:var(--dsw-shadow-lv3);padding:8px;display:flex;flex-direction:column;gap:6px}
+.dsdr-dock-item{display:flex;flex-direction:column;gap:2px;border-bottom:1px solid var(--dsw-alias-border-l1);padding-bottom:6px}
+.dsdr-dock-item:last-child{border-bottom:0;padding-bottom:0}
+.dsdr-dock-loc{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
+.dsdr-dock-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere}
+.dsdr-dock-send{min-height:24px}
+.dsdr-dock-close{min-height:24px;padding:0 6px}
 .dsdr-send{position:absolute;z-index:40;top:52px;right:16px;width:min(480px,calc(100% - 32px));border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-specific-menu);border-radius:12px;box-shadow:var(--dsw-shadow-lv3);padding:12px;display:flex;flex-direction:column;gap:8px}
 .dsdr-send-title{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}
 .dsdr-send-hint{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}
@@ -830,6 +869,8 @@ const zh = {
   'editor.openLine': '在编辑器中打开该行',
   'editor.failed': '打开失败',
   'repo.label': '仓库',
+  'review.dockComments': '行内评论 {n} 条',
+  'review.sent': '已发送 ✓',
   'settings.title': '变动',
   'settings.font': '字体',
   'settings.size': '字号',
@@ -951,6 +992,8 @@ const en: Record<keyof typeof zh, string> = {
   'editor.openLine': 'Open this line in editor',
   'editor.failed': 'Failed to open',
   'repo.label': 'Repo',
+  'review.dockComments': '{n} inline comments',
+  'review.sent': 'Sent ✓',
   'settings.title': 'Changes',
   'settings.font': 'Font',
   'settings.size': 'Font size',
@@ -1707,6 +1750,99 @@ function FileTreeView<T>(props: {
 }
 
 // ---------------------------------------------------------------------------
+// Composer dock (session scope): pending inline comments float above the
+// input box, Codex-style — hover the pill to preview, click send to inject.
+// ---------------------------------------------------------------------------
+
+type DiffReviewComposerDockProps = PropsRuntime<'conversation.input.dock'> & PropsLocale<'diff-review'> & { sessions: ISessions }
+
+function DiffReviewComposerDock({ sessionId, useSessions, sessions, t }: DiffReviewComposerDockProps) {
+  const cwd = useSessions((s: SessionListState) => s.byId[sessionId]?.cwd)
+  const pending = useSyncExternalStore(pendingCommentsStore.subscribe, pendingCommentsStore.getSnapshot)
+  const [hover, setHover] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
+  const [sentFlash, setSentFlash] = useState(false)
+  const sentIds = useRef<string | null>(null)
+
+  // Seed the store from server storage when nothing has been synced for this
+  // workspace yet (panel never opened this session — comments persist in .git).
+  useEffect(() => {
+    if (!cwd || pending.cwd === cwd) return
+    let cancelled = false
+    void loadComments(cwd).then((list) => {
+      if (cancelled) return
+      pendingCommentsStore.update((d) => {
+        if (d.cwd === cwd) return
+        d.cwd = cwd
+        d.comments = list
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cwd, pending.cwd])
+
+  const comments = pending.cwd === cwd ? pending.comments : []
+  const ids = comments.map((c) => c.id).join(',')
+  const alreadySent = sentIds.current === ids
+  useEffect(() => {
+    if (comments.length === 0) {
+      setDismissed(false)
+      setSentFlash(false)
+      sentIds.current = null
+    }
+  }, [comments.length])
+
+  if (!cwd || comments.length === 0 || dismissed || alreadySent) return null
+
+  const send = async () => {
+    setSending(true)
+    const lines: string[] = ['请处理以下针对当前工作区的行内评审评论（Address the inline comments，保持改动范围最小）：', '']
+    for (const c of comments) {
+      const anchor = c.lineNew !== null ? `:${c.lineNew}` : ` (old line ${c.lineOld})`
+      lines.push(`- ${c.path}${anchor}: ${c.text}`)
+    }
+    const outcome = await injectToSession(sessions, sessionId, lines.join('\n'))
+    setSending(false)
+    if (outcome === 'sent') {
+      sentIds.current = comments.map((c) => c.id).join(',')
+      setSentFlash(true)
+      setTimeout(() => setSentFlash(false), 2000)
+    } else if (outcome === 'copied') {
+      sentIds.current = comments.map((c) => c.id).join(',')
+      setSentFlash(true)
+      setTimeout(() => setSentFlash(false), 2000)
+    }
+  }
+
+  return (
+    <div className="dsdr-dock">
+      <div className="dsdr-dock-pill" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} role="button" tabIndex={0} aria-label={t('review.dockComments', { n: comments.length })}>
+        💬 {t('review.dockComments', { n: comments.length })}
+        {hover ? (
+          <div className="dsdr-dock-pop">
+            {comments.map((comment) => (
+              <div key={comment.id} className="dsdr-dock-item">
+                <span className="dsdr-dock-loc">{comment.path}{comment.lineNew !== null ? `:${comment.lineNew}` : ''}</span>
+                <span className="dsdr-dock-text">{comment.text}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <button type="button" className="dsdr-btn dsdr-btn-primary dsdr-dock-send" disabled={sending} onClick={() => void send()}>
+        {sentFlash ? t('review.sent') : sending ? t('review.busy') : t('review.sendToAgent')}
+      </button>
+      <button type="button" className="dsdr-btn dsdr-dock-close" aria-label={t('comment.cancel')} onClick={() => setDismissed(true)}>
+        ✕
+      </button>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Review overlay (root scope): session + workspace tabs.
 // ---------------------------------------------------------------------------
 
@@ -2255,6 +2391,14 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     else setJumpLine(null)
   }
 
+  // Surface workspace comments above the composer (Codex-style dock).
+  useEffect(() => {
+    pendingCommentsStore.update((d) => {
+      d.cwd = activeCwd ?? null
+      d.comments = comments
+    })
+  }, [comments, activeCwd])
+
   // ---- feedback loop: comments → agent (prompt injection, copy fallback) ----
   const composeReviewMessage = (): string => {
     if (comments.length === 0) return ''
@@ -2289,28 +2433,13 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     if (!text || busy) return
     setBusy(true)
     try {
-      const binding = currentId ? sessions.binding(currentId) : undefined
-      const session = binding?.session
-      if (session) {
-        const result = await session.prompt([{ type: 'text', text }], 'queue')
-        if (result.ok) {
-          setSendOpen(false)
-          setNotice({ kind: 'ok', text: t('review.sentToAgent') })
-          return
-        }
-      }
-    } catch {
-      // fall through to the copy fallback
+      const outcome = await injectToSession(sessions, currentId ?? null, text)
+      setSendOpen(false)
+      if (outcome === 'sent') setNotice({ kind: 'ok', text: t('review.sentToAgent') })
+      else if (outcome === 'copied') setNotice({ kind: 'ok', text: t('review.copied') })
+      else setNotice({ kind: 'error', text: t('review.copyFailed') })
     } finally {
       setBusy(false)
-    }
-    // Fallback: copy the composed review text.
-    try {
-      await navigator.clipboard.writeText(text)
-      setSendOpen(false)
-      setNotice({ kind: 'ok', text: t('review.copied') })
-    } catch {
-      setNotice({ kind: 'error', text: t('review.copyFailed') })
     }
   }
 
@@ -3207,6 +3336,19 @@ export function apply(ctx: ClientContext): void {
         inject: () => ({ sessions: ctx.sessions }),
       },
       DiffReviewOverlay,
+    ),
+  )
+  // Codex-style pending-comments bar above the composer.
+  ctx.slots.inject('conversation.input.dock', () =>
+    ctx.slots.register(
+      {
+        name: 'conversation.input.dock',
+        id: 'diff-review-comments-dock',
+        order: 20,
+        locale: LOCALE_NS,
+        inject: () => ({ sessions: ctx.sessions }),
+      },
+      DiffReviewComposerDock,
     ),
   )
   // The plugin's own settings tab inside 设置 → 插件 (not the General section).
