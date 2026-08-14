@@ -1489,12 +1489,12 @@ function UnifiedDiff({
                               ) : null}
                             </>
                           ) : null}
-                          {showActions && rowComments.length > 0 ? (
-                            rowComments.map((comment) => (
-                              <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={onUpdateComment ?? (async () => false)} onDelete={onDeleteComment ?? (() => {})} t={t} />
-                            ))
-                          ) : null}
                         </div>
+                        {showActions && rowComments.length > 0 ? (
+                          rowComments.map((comment) => (
+                            <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={onUpdateComment ?? (async () => false)} onDelete={onDeleteComment ?? (() => {})} t={t} />
+                          ))
+                        ) : null}
                         {editing ? <CommentEditor text={commentText ?? ''} onText={onCommentText ?? (() => {})} onSave={onSaveComment ?? (() => {})} onCancel={onCancelComment ?? (() => {})} busy={busy} t={t} /> : null}
                         {(reviewFindings ?? [])
                           .filter((f) => f.file === path && f.lineStart === (newLine ?? oldLine))
@@ -3045,9 +3045,9 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                                           <span className="dsdr-split-text">{row.right}</span>
                                           {row.rightNum !== null ? openBtn(row.rightNum) : null}
                                         </div>
+                                        </div>
                                         {leftComments.length > 0 ? leftComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
                                         {rightComments.length > 0 ? rightComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
-                                      </div>
                                       {commentEditor && (leftKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` || rightKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}`) ? (
                                         <CommentEditor text={commentText} onText={setCommentText} onSave={() => void saveComment()} onCancel={cancelComment} busy={busy} t={t} />
                                       ) : null}
@@ -3493,9 +3493,9 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                                       {row.rightNum !== null ? openBtn(row.rightNum) : null}
                                       {rowFindings.length > 0 && row.rightNum !== null ? <span className={`dsdr-split-finding dsdr-finding-${rowFindings[0].priority}`}>{rowFindings[0].priority}</span> : null}
                                     </div>
+                                    </div>
                                     {leftComments.length > 0 ? leftComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
                                     {rightComments.length > 0 ? rightComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
-                                  </div>
                                   {commentEditor && (leftKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` || rightKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}`) ? (
                                     <CommentEditor text={commentText} onText={setCommentText} onSave={() => void saveComment()} onCancel={cancelComment} busy={busy} t={t} />
                                   ) : null}
