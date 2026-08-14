@@ -681,18 +681,17 @@ const REVIEW_CSS = `
 .dsdr-pr-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-pr-meta{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
 .dsdr-pr-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere}
-.dsdr-dock{display:flex;flex-direction:column;gap:4px;margin:8px 12px 0;padding:8px 12px;background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;box-shadow:var(--dsw-shadow-lv3);font-size:12px;line-height:18px}
-.dsdr-dock-head{display:flex;align-items:center;gap:8px;min-height:24px}
+.dsdr-dock{display:flex;flex-direction:column;gap:2px;margin:6px 12px 0;padding:6px 10px;background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;box-shadow:var(--dsw-shadow-lv3);font-size:12px;line-height:18px}
+.dsdr-dock-head{display:flex;align-items:center;gap:6px;min-height:22px}
 .dsdr-dock-icon{display:inline-flex;color:var(--dsw-alias-button-info-fill)}
-.dsdr-dock-count{font-weight:600;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary)}
-.dsdr-dock-hint{color:var(--dsw-alias-label-tertiary);font-size:11px}
-.dsdr-dock-close{flex:none;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:0}
+.dsdr-dock-count{font-weight:600;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary);white-space:nowrap}
+.dsdr-dock-close{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:0}
 .dsdr-dock-close:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsdr-dock-list{display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--dsw-alias-border-l1);padding-top:4px;margin-top:2px;max-height:248px;overflow-y:auto}
-.dsdr-dock-item{display:flex;flex-direction:column;gap:2px;text-align:left;border:0;background:transparent;border-radius:7px;padding:5px 8px;cursor:pointer;font:inherit}
+.dsdr-dock-list{display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--dsw-alias-border-l1);padding-top:4px;margin-top:2px;max-height:168px;overflow-y:auto}
+.dsdr-dock-item{display:flex;flex-direction:column;gap:1px;text-align:left;border:0;background:transparent;border-radius:7px;padding:4px 8px;cursor:pointer;font:inherit}
 .dsdr-dock-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.dsdr-dock-loc{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
-.dsdr-dock-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);white-space:pre-wrap;overflow-wrap:anywhere}
+.dsdr-dock-loc{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono);white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.dsdr-dock-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .dsdr-send{position:absolute;z-index:40;top:52px;right:16px;width:min(480px,calc(100% - 32px));border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-specific-menu);border-radius:12px;box-shadow:var(--dsw-shadow-lv3);padding:12px;display:flex;flex-direction:column;gap:8px}
 .dsdr-send-title{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}
 .dsdr-send-hint{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}
@@ -1845,8 +1844,7 @@ function DiffReviewComposerDock({ sessionId, useSessions, sessions, input, t }: 
     <div className="dsdr-dock" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <div className="dsdr-dock-head">
         <span className="dsdr-dock-icon"><IconComment /></span>
-        <span className="dsdr-dock-count">{t('review.dockComments', { n: comments.length })}</span>
-        <span className="dsdr-dock-hint">{t('review.dockHint')}</span>
+        <span className="dsdr-dock-count" title={t('review.dockHint')}>{t('review.dockComments', { n: comments.length })}</span>
         <span className="dsdr-spacer" />
         <button type="button" className="dsdr-dock-close" aria-label={t('comment.cancel')} onClick={() => setDismissed(true)}>
           <IconX />
