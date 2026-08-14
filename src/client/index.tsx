@@ -706,10 +706,8 @@ const REVIEW_CSS = `
 .dsdr-verdict-meta{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}
 .dsdr-verdict-model{font-size:11px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
 .dsdr-finding-card{display:flex;flex-direction:column;gap:4px;margin:4px 0 6px;padding:8px 16px;background:var(--dsw-alias-bg-module-platform);border-top:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1)}
-.dsdr-saved-comment{display:flex;flex-direction:column;gap:4px;margin:0 16px 6px 24px;padding:8px 12px;background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;font-size:12px;line-height:18px}
-.dsdr-saved-comment-text{color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--dsw-font-mono)}
-.dsdr-saved-comment-meta{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
-.dsdr-saved-comment-meta .dsdr-btn{min-height:20px;padding:0 6px;font-size:10px;line-height:14px;margin-left:auto}
+.dsdr-saved-comment-loc{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
+.dsdr-saved-comment-view{white-space:pre-wrap;overflow-wrap:anywhere;resize:none}
 .dsdr-finding-card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .dsdr-finding-card-title{flex:1;min-width:0;font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary)}
 .dsdr-finding-card-loc{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -873,6 +871,7 @@ const zh = {
   'comment.save': '保存',
   'comment.cancel': '取消',
   'comment.delete': '删除',
+  'comment.edit': '编辑',
   'comment.saved': '已保存评论',
   'comment.failed': '评论保存失败',
   'scope.label': '范围',
@@ -997,6 +996,7 @@ const en: Record<keyof typeof zh, string> = {
   'comment.save': 'Save',
   'comment.cancel': 'Cancel',
   'comment.delete': 'Delete',
+  'comment.edit': 'Edit',
   'comment.saved': 'Comment saved',
   'comment.failed': 'Failed to save comment',
   'scope.label': 'Scope',
@@ -1310,16 +1310,44 @@ function CommentEditor({
   )
 }
 
-/** A saved inline comment — always-visible editor-style box (read-only). */
-function SavedCommentBox({ comment, busy, onDelete, t }: { comment: ReviewComment; busy: boolean; onDelete: (id: string) => void; t: (key: keyof typeof zh, params?: Record<string, unknown>) => string }) {
+/** A saved inline comment, rendered exactly like the comment editor — the box
+ * is read-only until Edit is pressed, then it becomes the editable editor. */
+function CommentBox({ comment, busy, onUpdate, onDelete, t }: { comment: ReviewComment; busy: boolean; onUpdate: (id: string, text: string) => Promise<boolean>; onDelete: (id: string) => void; t: (key: keyof typeof zh, params?: Record<string, unknown>) => string }) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(comment.text)
+  if (editing) {
+    return (
+      <CommentEditor
+        text={text}
+        onText={setText}
+        onSave={() =>
+          void (async () => {
+            if (await onUpdate(comment.id, text.trim())) setEditing(false)
+          })()
+        }
+        onCancel={() => {
+          setText(comment.text)
+          setEditing(false)
+        }}
+        busy={busy}
+        t={t}
+      />
+    )
+  }
   return (
-    <div className="dsdr-saved-comment">
-      <div className="dsdr-saved-comment-text">{comment.text}</div>
-      <div className="dsdr-saved-comment-meta">
-        <span>
-          {comment.path}
-          {comment.lineNew !== null ? `:${comment.lineNew}` : comment.lineOld !== null ? ` (old:${comment.lineOld})` : ''}
-        </span>
+    <div className="dsdr-comment-editor">
+      <div className="dsdr-saved-comment-loc">
+        {comment.path}
+        {comment.lineNew !== null ? `:${comment.lineNew}` : comment.lineOld !== null ? ` (old:${comment.lineOld})` : ''}
+      </div>
+      <div className="dsdr-comment-input dsdr-saved-comment-view">{comment.text}</div>
+      <div className="dsdr-comment-actions">
+        <button type="button" className="dsdr-btn" disabled={busy} onClick={() => {
+          setText(comment.text)
+          setEditing(true)
+        }}>
+          {t('comment.edit')}
+        </button>
         <button type="button" className="dsdr-btn dsdr-btn-danger" disabled={busy} onClick={() => onDelete(comment.id)}>
           {t('comment.delete')}
         </button>
@@ -1363,6 +1391,7 @@ function UnifiedDiff({
   onSaveComment,
   onCancelComment,
   onDeleteComment,
+  onUpdateComment,
   readOnly,
   path,
   reviewFindings,
@@ -1382,6 +1411,7 @@ function UnifiedDiff({
   onSaveComment?: () => void
   onCancelComment?: () => void
   onDeleteComment?: (id: string) => void
+  onUpdateComment?: (id: string, text: string) => Promise<boolean>
   /** Hide per-hunk action bars (branch scope is a read-only diff). */
   readOnly?: boolean
   /** Repo-relative file path (for open-in-editor and markers). */
@@ -1461,7 +1491,7 @@ function UnifiedDiff({
                           ) : null}
                           {showActions && rowComments.length > 0 ? (
                             rowComments.map((comment) => (
-                              <SavedCommentBox key={comment.id} comment={comment} busy={busy} onDelete={onDeleteComment ?? (() => {})} t={t} />
+                              <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={onUpdateComment ?? (async () => false)} onDelete={onDeleteComment ?? (() => {})} t={t} />
                             ))
                           ) : null}
                         </div>
@@ -2506,6 +2536,26 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     }
   }
 
+  /** Update one saved comment's text (PUT replace). Returns success. */
+  const updateComment = async (id: string, text: string): Promise<boolean> => {
+    if (!text || busy) return false
+    const next = comments.map((c) => (c.id === id ? { ...c, text, createdAt: new Date().toISOString() } : c))
+    setBusy(true)
+    try {
+      if (activeCwd && (await saveComments(activeCwd, next))) {
+        setComments(next)
+        return true
+      }
+      setNotice({ kind: 'error', text: t('comment.failed') })
+      return false
+    } catch (e) {
+      setNotice({ kind: 'error', text: e instanceof Error ? e.message : t('comment.failed') })
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // ---- AI review (/review): run, re-run, and hand findings to the agent ----
   const onReview = async () => {
     if (!activeCwd || reviewing || busy) return
@@ -2995,8 +3045,8 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                                           <span className="dsdr-split-text">{row.right}</span>
                                           {row.rightNum !== null ? openBtn(row.rightNum) : null}
                                         </div>
-                                        {leftComments.length > 0 ? leftComments.map((comment) => <SavedCommentBox key={comment.id} comment={comment} busy={busy} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
-                                        {rightComments.length > 0 ? rightComments.map((comment) => <SavedCommentBox key={comment.id} comment={comment} busy={busy} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
+                                        {leftComments.length > 0 ? leftComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
+                                        {rightComments.length > 0 ? rightComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
                                       </div>
                                       {commentEditor && (leftKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` || rightKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}`) ? (
                                         <CommentEditor text={commentText} onText={setCommentText} onSave={() => void saveComment()} onCancel={cancelComment} busy={busy} t={t} />
@@ -3030,7 +3080,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                                     ) : null}
                                   </div>
                                   {showActions && rowComments.length > 0 ? (
-                                    rowComments.map((comment) => <SavedCommentBox key={comment.id} comment={comment} busy={busy} onDelete={(id) => void deleteComment(id)} t={t} />)
+                                    rowComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />)
                                   ) : null}
                                   {commentEditor && `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` === key ? (
                                     <CommentEditor text={commentText} onText={setCommentText} onSave={() => void saveComment()} onCancel={cancelComment} busy={busy} t={t} />
@@ -3443,8 +3493,8 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                                       {row.rightNum !== null ? openBtn(row.rightNum) : null}
                                       {rowFindings.length > 0 && row.rightNum !== null ? <span className={`dsdr-split-finding dsdr-finding-${rowFindings[0].priority}`}>{rowFindings[0].priority}</span> : null}
                                     </div>
-                                    {leftComments.length > 0 ? leftComments.map((comment) => <SavedCommentBox key={comment.id} comment={comment} busy={busy} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
-                                    {rightComments.length > 0 ? rightComments.map((comment) => <SavedCommentBox key={comment.id} comment={comment} busy={busy} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
+                                    {leftComments.length > 0 ? leftComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
+                                    {rightComments.length > 0 ? rightComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />) : null}
                                   </div>
                                   {commentEditor && (leftKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` || rightKey === `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}`) ? (
                                     <CommentEditor text={commentText} onText={setCommentText} onSave={() => void saveComment()} onCancel={cancelComment} busy={busy} t={t} />
@@ -3476,6 +3526,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                       onSaveComment={() => void saveComment()}
                       onCancelComment={cancelComment}
                       onDeleteComment={(id) => void deleteComment(id)}
+                      onUpdateComment={updateComment}
                       readOnly={!allowActions}
                       path={selectedFile.path}
                       reviewFindings={review?.findings}
