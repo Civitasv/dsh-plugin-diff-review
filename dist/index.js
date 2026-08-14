@@ -245,14 +245,20 @@ async function pushAction(config, raw) {
   }
   return { status: 200, body: { ok: true, output: res.stdout.trim() || res.stderr.trim() || "pushed" } };
 }
-var HISTORY_LIMIT = 50;
+var HISTORY_LIMIT = 30;
 async function collectHistory(cwd) {
   const upstreamResult = await git(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
   const hasUpstream = upstreamResult.code === 0 && upstreamResult.stdout.trim() !== "";
-  const range = hasUpstream ? "@{u}..HEAD" : "HEAD";
+  const ahead = /* @__PURE__ */ new Set();
+  if (hasUpstream) {
+    const revs = await git(cwd, ["rev-list", "@{u}..HEAD"]);
+    if (revs.code === 0) {
+      for (const line of revs.stdout.split("\n")) if (line.trim()) ahead.add(line.trim());
+    }
+  }
   const res = await git(cwd, [
     "log",
-    range,
+    "HEAD",
     `--max-count=${HISTORY_LIMIT}`,
     "--pretty=format:%H%x00%h%x00%an%x00%aI%x00%s%x01"
   ]);
@@ -261,7 +267,7 @@ async function collectHistory(cwd) {
   }
   const commits = res.stdout.split("").map((record) => record.trim()).filter(Boolean).map((record) => {
     const [hash, short, author, date, ...subjectParts] = record.split("\0");
-    return { hash, short, author, date, subject: subjectParts.join("\0") };
+    return { hash, short, author, date, subject: subjectParts.join("\0"), ahead: hasUpstream ? ahead.has(hash) : true };
   }).filter((c) => c.hash && c.short);
   return { ok: true, commits };
 }

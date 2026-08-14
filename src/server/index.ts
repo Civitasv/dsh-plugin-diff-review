@@ -354,18 +354,25 @@ async function pushAction(config: Config, raw: unknown): Promise<{ status: numbe
 // Local history (commits not on the remote) + per-commit diff.
 // ---------------------------------------------------------------------------
 
-const HISTORY_LIMIT = 50
+const HISTORY_LIMIT = 30
 
-/** List commits ahead of the upstream (all local commits when no upstream). */
+/** Recent commit timeline: every commit on HEAD, flagged ahead (unpushed). */
 async function collectHistory(cwd: string): Promise<HistoryResponse> {
+  // Ahead set: commits not on the remote. Without an upstream every local
+  // commit counts as unpushed.
   const upstreamResult = await git(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])
   const hasUpstream = upstreamResult.code === 0 && upstreamResult.stdout.trim() !== ''
-  const range = hasUpstream ? '@{u}..HEAD' : 'HEAD'
+  const ahead = new Set<string>()
+  if (hasUpstream) {
+    const revs = await git(cwd, ['rev-list', '@{u}..HEAD'])
+    if (revs.code === 0) for (const line of revs.stdout.split('\n')) if (line.trim()) ahead.add(line.trim())
+  }
+
   // Record terminator \x01, field separator \x00 (subjects may contain any
   // printable char except the control separators).
   const res = await git(cwd, [
     'log',
-    range,
+    'HEAD',
     `--max-count=${HISTORY_LIMIT}`,
     '--pretty=format:%H%x00%h%x00%an%x00%aI%x00%s%x01',
   ])
@@ -378,7 +385,7 @@ async function collectHistory(cwd: string): Promise<HistoryResponse> {
     .filter(Boolean)
     .map((record) => {
       const [hash, short, author, date, ...subjectParts] = record.split('\x00')
-      return { hash, short, author, date, subject: subjectParts.join('\x00') }
+      return { hash, short, author, date, subject: subjectParts.join('\x00'), ahead: hasUpstream ? ahead.has(hash) : true }
     })
     .filter((c) => c.hash && c.short)
   return { ok: true, commits }

@@ -81,7 +81,7 @@ export interface GitResponse {
   error?: string
 }
 
-/** One local (not-yet-pushed) commit. */
+/** One commit in the history timeline. */
 export interface CommitInfo {
   /** Full hash. */
   hash: string
@@ -93,9 +93,11 @@ export interface CommitInfo {
   date: string
   /** Commit subject. */
   subject: string
+  /** True when the commit is not on the remote (unpushed). */
+  ahead: boolean
 }
 
-/** GET {historyPath}?cwd=… response — commits ahead of the upstream. */
+/** GET {historyPath}?cwd=… response — the recent commit timeline. */
 export interface HistoryResponse {
   ok: boolean
   commits: CommitInfo[]

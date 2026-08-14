@@ -474,12 +474,25 @@ const REVIEW_CSS = `
 .dsdr-branch-ahead{color:var(--dsw-alias-state-success-primary)}
 .dsdr-branch-behind{color:var(--dsw-alias-state-warn-primary)}
 .dsdr-branch-sync{color:var(--dsw-alias-state-success-primary)}
-.dsdr-commit{display:flex;align-items:flex-start;gap:8px;width:100%;box-sizing:border-box;border-radius:8px;padding:6px 8px;cursor:pointer;border:0;background:transparent;text-align:left;font:inherit;color:var(--dsw-alias-label-primary)}
+.dsdr-commit{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;border-radius:8px;padding:5px 8px;cursor:pointer;border:0;background:transparent;text-align:left;font:inherit;color:var(--dsw-alias-label-primary)}
 .dsdr-commit:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.dsdr-commit-selected{background:var(--dsw-alias-interactive-bg-hover)}
-.dsdr-commit-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
-.dsdr-commit-subject{font-size:12px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
-.dsdr-commit-meta{font-size:11px;color:var(--dsw-alias-label-tertiary)}
+.dsdr-tl-selected .dsdr-commit{background:var(--dsw-alias-interactive-bg-hover)}
+.dsdr-timeline{display:flex;flex-direction:column}
+.dsdr-tl-item{display:flex;gap:6px;align-items:stretch;border-radius:8px}
+.dsdr-tl-rail{position:relative;flex:none;width:14px;display:flex;justify-content:center}
+.dsdr-tl-rail::before{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--dsw-alias-border-l2)}
+.dsdr-tl-item:first-child .dsdr-tl-rail::before{top:9px}
+.dsdr-tl-item:last-child .dsdr-tl-rail::before{bottom:auto;height:9px}
+.dsdr-tl-dot{position:relative;z-index:1;top:9px;flex:none;width:7px;height:7px;border-radius:50%;border:1px solid var(--dsw-alias-bg-module-platform)}
+.dsdr-tl-dot-local{background:var(--dsw-alias-state-success-primary)}
+.dsdr-tl-dot-remote{background:var(--dsw-alias-label-tertiary)}
+.dsdr-commit-head{display:flex;align-items:center;gap:6px;min-width:0}
+.dsdr-commit-short{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
+.dsdr-commit-subject{flex:1;min-width:0;font-size:12px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.dsdr-commit-meta{font-size:11px;color:var(--dsw-alias-label-tertiary);padding-left:0}
+.dsdr-tl-badge{flex:none;font-size:10px;line-height:14px;border-radius:4px;padding:0 5px}
+.dsdr-tl-badge-local{background:rgba(46,160,67,.16);color:var(--dsw-alias-state-success-primary)}
+.dsdr-tl-badge-remote{background:var(--dsw-alias-fill-l2);color:var(--dsw-alias-label-tertiary)}
 .dsdr-diff-hash{margin-left:8px;font-size:11px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
 .dsdr-body{display:flex;flex:1;min-height:0}
 .dsdr-files{width:300px;flex:none;border-right:1px solid var(--dsw-alias-border-l1);overflow-y:auto;padding:8px}
@@ -600,7 +613,9 @@ const zh = {
   'review.sectionChanges': '未暂存',
   'review.sectionBranch': '分支与远程',
   'review.noUpstream': '未设置上游分支',
-  'review.localCommits': '本地提交',
+  'review.history': '历史',
+  'history.local': '本地',
+  'history.remote': '远程',
   'time.now': '刚刚',
   'time.minutes': '{n} 分钟前',
   'time.hours': '{n} 小时前',
@@ -663,7 +678,9 @@ const en: Record<keyof typeof zh, string> = {
   'review.sectionChanges': 'Changes',
   'review.sectionBranch': 'Branch vs remote',
   'review.noUpstream': 'no upstream',
-  'review.localCommits': 'Local commits',
+  'review.history': 'History',
+  'history.local': 'local',
+  'history.remote': 'remote',
   'time.now': 'just now',
   'time.minutes': '{n} min ago',
   'time.hours': '{n} h ago',
@@ -1622,23 +1639,35 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               ) : null}
               {history.length > 0 ? (
                 <>
-                  <div className="dsdr-section">{t('review.localCommits')} ({history.length})</div>
-                  {history.map((commit) => (
-                    <button
-                      key={commit.hash}
-                      type="button"
-                      role="option"
-                      aria-selected={selectedCommit?.hash === commit.hash}
-                      className={`dsdr-commit${selectedCommit?.hash === commit.hash ? ' dsdr-commit-selected' : ''}`}
-                      onClick={() => selectCommit(commit)}
-                    >
-                      <span className="dsdr-chip dsdr-chip-m">{commit.short}</span>
-                      <span className="dsdr-commit-main">
-                        <span className="dsdr-commit-subject" title={commit.subject}>{commit.subject}</span>
-                        <span className="dsdr-commit-meta">{commit.author} · {relativeTime(commit.date, t)}</span>
-                      </span>
-                    </button>
-                  ))}
+                  <div className="dsdr-section">{t('review.history')}</div>
+                  <div className="dsdr-timeline">
+                    {history.map((commit) => (
+                      <div
+                        key={commit.hash}
+                        className={`dsdr-tl-item${selectedCommit?.hash === commit.hash ? ' dsdr-tl-selected' : ''}`}
+                      >
+                        <div className="dsdr-tl-rail" aria-hidden="true">
+                          <span className={`dsdr-tl-dot${commit.ahead ? ' dsdr-tl-dot-local' : ' dsdr-tl-dot-remote'}`} />
+                        </div>
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={selectedCommit?.hash === commit.hash}
+                          className="dsdr-commit"
+                          onClick={() => selectCommit(commit)}
+                        >
+                          <span className="dsdr-commit-head">
+                            <span className={`dsdr-tl-badge${commit.ahead ? ' dsdr-tl-badge-local' : ' dsdr-tl-badge-remote'}`}>
+                              {commit.ahead ? t('history.local') : t('history.remote')}
+                            </span>
+                            <span className="dsdr-commit-short">{commit.short}</span>
+                            <span className="dsdr-commit-subject" title={commit.subject}>{commit.subject}</span>
+                          </span>
+                          <span className="dsdr-commit-meta">{commit.author} · {relativeTime(commit.date, t)}</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </>
               ) : null}
               <div className="dsdr-section">{t('review.sectionBranch')}</div>
@@ -1680,14 +1709,19 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                       <span className="dsdr-diff-stats">
                         {t('review.changes', { added: commitDiff.added, deleted: commitDiff.deleted })}
                       </span>
+                      <DiffViewToggle view={view} onChange={setView} t={t} />
                     </div>
-                    <div className="dsdr-diff-scroll">
-                      <pre className="dsdr-pre">
-                        {gitDiffRows(commitDiff.diff).map((row, i) => (
-                          <div key={i} className={`dsdr-line dsdr-line-${row.kind}`}>{row.text || ' '}</div>
-                        ))}
-                      </pre>
-                    </div>
+                    {view === 'split' && gitSplitBlocks(commitDiff.diff).length > 0 ? (
+                      <SplitDiff blocks={gitSplitBlocks(commitDiff.diff)} beforeLabel={t('view.before')} afterLabel={t('view.after')} />
+                    ) : (
+                      <div className="dsdr-diff-scroll">
+                        <pre className="dsdr-pre">
+                          {gitDiffRows(commitDiff.diff).map((row, i) => (
+                            <div key={i} className={`dsdr-line dsdr-line-${row.kind}`}>{row.text || ' '}</div>
+                          ))}
+                        </pre>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="dsdr-diff-empty">{commitDiff?.error ?? t('review.noDiffData')}</div>
