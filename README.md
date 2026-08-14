@@ -25,8 +25,36 @@
 - 左侧按 git 维度分区，每区一棵文件树：**已暂存**（staged）、**未暂存**（unstaged
   含未跟踪）、**本地提交**（未推送的提交时间线，标注 本地/远程）、**分支与远程**
   （`branch → upstream`、领先/落后、推送）；
-- 逐文件 **采纳**（`git add`）/ **丢弃**（`git restore`；未跟踪文件直接删除），
-  丢弃需二次点击确认；「全部采纳 / 全部丢弃」一键操作；
+- **评审范围切换**（scope 下拉，对齐 Codex 评审面板）：全部 / 未暂存 / 已暂存 /
+  提交 / 分支 / 最后一轮 ——「分支」对比所选基线分支的 merge-base diff（只读），
+  「最后一轮」只看当前会话最近一轮代理改动的文件；
+- **AI 评审（/review）**：头部「评审」按钮 → 按当前范围收集 diff，用
+  `ctx.llm` 调模型（模型 = 插件配置 `reviewProvider/reviewModel`，缺省用会话
+  当前模型），产出 Codex 式结构化发现（P0–P3、文件行号、置信度、建议代码）与
+  总体结论；发现叠加在 diff 行上（单/双栏都支持：优先级色条 + 角标），顶部条
+  显示结论与模型名，点「N 条发现」展开发现列表面板（点击跳转到对应文件行），
+  「发送发现给代理」把发现注入会话修复 → 修完再点「评审」复评审；
+- **PR(gh) 集成**：当前分支关联 GitHub PR 时，左侧显示 PR 标题与 reviewer 评论
+  （`gh pr view` + `gh api`），点评论跳到对应文件行，「发送 PR 评论给代理」聚合
+  处理；未安装 gh 或无 PR 时静默隐藏；
+- **多仓库**：工作区目录含多个 git 仓库（嵌套/monorepo）时，范围旁出现仓库选择器，
+  切换后所有操作针对所选仓库；
+- **编辑器联动**：diff 头部「在编辑器中打开」打开该文件，行 hover 的 ↗ 按钮打开
+  该行 —— 复用 `dsh-plugin-open-editor`（已扩展支持 file:line：VS Code 系
+  `--goto`、vim/nvim/emacs `+N`、Sublime `file:line`）；未装 open-editor 时按钮
+  报错提示；
+- **逐文件采纳 / 丢弃 / 取消暂存**：`git add` / `git restore`（未跟踪文件直接删除）/
+  `git restore --staged`，丢弃需二次点击确认；「全部采纳 / 全部取消暂存 / 全部丢弃」
+  一键操作；
+- **逐 hunk 操作**：每个 diff hunk 自带 暂存 / 丢弃（未暂存的 hunk）或
+  取消暂存 / 丢弃（已暂存的 hunk）按钮，可部分暂存新文件（未跟踪文件也能逐 hunk
+  暂存）；hunk 过期（已被其他操作改变）时提示刷新；
+- **行内评论**（单栏视图）：hover diff 行 → `+` → 写下评论（Ctrl/⌘+Enter 保存），
+  有评论的行左侧高亮并显示数量角标，点击查看/删除；评论存放在仓库的
+  `.git/diff-review-comments.json`（不进工作区、不进 git 历史）；
+- **发送给代理**：把行内评论聚合为评审指引注入当前会话
+  （`Address the inline comments`，经 DSH 客户端 `session.prompt`），发送失败时
+  退化为可复制文本；
 - **提交**：输入提交说明，提交已暂存的更改；**推送**：双击确认后推送当前分支；
 - 切换工作区或标签页时**自动刷新**（无需手动刷新按钮），打开期间每 15 秒静默刷新；
 - 每个文件展示完整 unified diff（单栏 / 双栏切换）。
@@ -84,12 +112,19 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 | --- | --- |
 | 点击「变动」 | 打开审查面板，默认停在「工作区」页签 |
 | 工作区页签 | 左侧按 已暂存 / 未暂存 / 历史 / 分支 分区，右侧显示 diff |
+| **范围下拉** | 全部 / 未暂存 / 已暂存 / 提交 / 分支 / 最后一轮，切换展示的文件集 |
+| **仓库选择器** | 工作区含多个 git 仓库时出现，切换后所有操作针对所选仓库 |
+| **评审** | 按当前范围调模型产出 P0–P3 发现 + 总体结论；发现叠加在 diff 行，顶部条可发送给代理 |
 | 点击文件树中的文件 | 右侧显示该文件的 unified diff |
 | **单栏 / 双栏切换** | diff 头部可切换，选择会记住 |
+| **hunk 操作** | 每个 hunk 行有 暂存/丢弃 或 取消暂存/丢弃 按钮（只读范围不显示） |
+| **行内评论** | 单栏视图 hover 行 → `+` → 输入评论保存；有评论的行显示角标，点击查看/删除 |
+| **发送给代理** | 有评论时头部出现，聚合评论注入当前会话（失败退化为复制文本） |
+| **在编辑器中打开** | diff 头部打开文件；行 hover 的 ↗ 打开该行（经 dsh-plugin-open-editor） |
 | 历史时间线 | 显示最近提交（本地/远程标注），点提交 → 该提交的变动文件树 + 逐文件 diff |
-| 单文件「采纳」 | `git add` 该文件（保留更改并暂存） |
-| 单文件「丢弃」 | 恢复该文件到 HEAD（未跟踪文件删除），需二次点击确认 |
-| 「全部采纳」 / 「全部丢弃」 | 对全部更改批量操作，丢弃需二次确认 |
+| **PR 区** | 左侧显示当前分支的 PR 标题与 reviewer 评论，点评论跳转对应行；可聚合发送给代理 |
+| 单文件「采纳 / 取消暂存 / 丢弃」 | `git add` / `git restore --staged` / 恢复该文件到 HEAD（未跟踪文件删除），丢弃需二次点击确认 |
+| 「全部采纳 / 全部取消暂存 / 全部丢弃」 | 对全部更改批量操作，丢弃需二次确认 |
 | **提交** | 输入说明 → 提交已暂存的更改（无已暂存时按钮禁用） |
 | **推送** | 双击确认 → 推送当前分支到上游；「分支与远程」区显示领先/落后数 |
 
@@ -111,11 +146,19 @@ powershell -ExecutionPolicy Bypass -File install.ps1
   name: dsh-plugin-diff-review
   config:
     statusPath: /diff-review/status          # 工作区状态路由（一般无需改动）
-    applyPath: /diff-review/apply            # 采纳/丢弃路由
+    applyPath: /diff-review/apply            # 采纳/丢弃/取消暂存路由
+    applyHunkPath: /diff-review/apply-hunk   # 逐 hunk 操作路由
     commitPath: /diff-review/commit          # 提交路由
     pushPath: /diff-review/push              # 推送路由
     historyPath: /diff-review/history        # 历史时间线路由
     commitDiffPath: /diff-review/commit-diff # 提交 diff 路由
+    commentsPath: /diff-review/comments      # 行内评论读写路由
+    branchesPath: /diff-review/branches      # 本地分支列表路由
+    reviewPath: /diff-review/review          # AI 评审路由
+    prPath: /diff-review/pr                  # PR(gh) 上下文路由
+    reposPath: /diff-review/repos            # 多仓库检测路由
+    reviewProvider: ""                       # AI 评审用 provider（如 deepseek-official）
+    reviewModel: ""                          # AI 评审用模型；两者为空时用会话当前模型
     allowedRoots: []                         # 非空时，仅允许审查这些目录下的仓库
 ```
 
@@ -131,10 +174,21 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 **工作区**（服务器端）：`git status --porcelain=v1 -z` + `git ls-files --others`
 收集变更，`git diff` / `git diff --cached` 取 diff；采纳 = `git add`，丢弃 =
-`git restore`；提交 = `git commit -m`，推送 = `git push`；历史 = `git log HEAD`
-（`git rev-list @{u}..HEAD` 标注未推送）；提交 diff = `git show --format=` +
-`--numstat`。所有 git 命令通过 `execFile` 执行（无 shell），路径参数带 `--`
-并拒绝 `..` 穿越与绝对路径，提交说明拒绝以 `-` 开头，hash 严格校验。
+`git restore`，取消暂存 = `git restore --staged`；逐 hunk 操作：index 侧（暂存/
+取消暂存）用 `git apply --cached`（hunk 的上下文与 index 完全一致，可靠），
+工作区侧（丢弃）用 hunk 文本做行级替换写回文件（`git apply --reverse` 对
+hunk 不落在文件末尾的补丁不可靠，故不用）；提交 = `git commit -m`，推送 =
+`git push`；历史 = `git log HEAD`（`git rev-list @{u}..HEAD` 标注未推送）；
+提交 diff = `git show --format=` + `--numstat`；分支范围 = `git diff $(git
+merge-base HEAD <base>)`（只读）；行内评论存于 `git rev-parse --git-dir`
+下的 `diff-review-comments.json`；AI 评审 = 按范围收集 diff → 解析模型
+（配置 `reviewProvider/reviewModel` 优先，否则取会话最近请求头
+`requestHeader().config`）→ `ctx.llm.stream` 严格 JSON 提示词 → 校验发现
+（路径必须在评审文件集内，行号钳制）；PR = `gh pr view` + `gh api
+pulls/{n}/comments`（无 gh 静默降级）；多仓库 = `git rev-parse
+--is-inside-work-tree`/`--show-toplevel` 扫描工作区及其一层子目录。所有 git
+命令通过 `execFile` 执行（无 shell），路径参数带 `--` 并拒绝 `..` 穿越与绝对
+路径，提交说明拒绝以 `-` 开头，hash 与 hunk 文本严格校验。
 
 ## 卸载
 
@@ -149,6 +203,17 @@ powershell -ExecutionPolicy Bypass -File install.ps1
   工具名仍会列出。
 - **「提交」按钮不可用**：说明当前没有已暂存的更改 —— 先「采纳」文件或「全部采纳」。
 - **「推送」按钮不可用**：说明当前分支没有领先提交，或未配置上游分支（`git push -u` 一次）。
+- **行内评论在双栏视图看不到**：评论（hover 添加、角标查看）目前只在单栏视图提供，
+  切回单栏即可。
+- **「发送给代理」没反应**：需要当前会话可用；如果注入失败，按钮会退化为复制文本
+  （剪切板），把评论粘贴到对话即可。
+- **「评审」提示没有可用模型**：在插件配置里设置 `reviewProvider` + `reviewModel`，
+  或先让当前会话发过一条消息（评审会复用会话的模型）。
+- **「在编辑器中打开」提示失败**：需要已安装 `dsh-plugin-open-editor` 且编辑器
+  可执行文件在 PATH 中（见该插件 README 的 `customEditors`）。
+- **左侧没有 PR 区**：当前分支没有关联 GitHub PR，或本机未安装/未登录 `gh`。
+- **hunk 操作提示「刷新」**：该 hunk 已被其它操作改变（上下文不匹配），重新加载
+  面板即可继续。
 - **按钮没有出现**：确认已重启 `dsh web`，并检查 设置 → 插件清单 里
   `diff-review` 已加载。
 - **未跟踪文件被「全部丢弃」删除了，能找回吗？** 不能 —— 未跟踪文件不在 git

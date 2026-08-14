@@ -17,7 +17,7 @@
  * current session is read reactively through `ctx.sessions` (injected via the
  * overlay registration's inject face).
  */
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, Fragment } from 'react'
 import type { CSSProperties, ReactElement, ReactNode } from 'react'
 import { diffLines } from 'diff'
 import type { ClientContext, ISessions, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
@@ -33,7 +33,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { ApplyResponse, CommitDiffResponse, CommitInfo, DiffFile, GitResponse, HistoryResponse, StatusResponse } from '../shared/types.ts'
+import type { ApplyHunkResponse, ApplyResponse, CommentsResponse, CommitDiffResponse, CommitInfo, DiffFile, DiffHunk, GitResponse, HistoryResponse, PrResponse, ReposResponse, ReviewComment, ReviewFinding, ReviewResponse, StatusResponse } from '../shared/types.ts'
 
 export const name = 'diff-review'
 
@@ -43,10 +43,17 @@ export const inject = ['sessions', 'slots', 'locale']
 const LOCALE_NS = 'diff-review'
 const STATUS_URL = 'diff-review/status'
 const APPLY_URL = 'diff-review/apply'
+const APPLY_HUNK_URL = 'diff-review/apply-hunk'
 const COMMIT_URL = 'diff-review/commit'
 const PUSH_URL = 'diff-review/push'
 const HISTORY_URL = 'diff-review/history'
 const COMMIT_DIFF_URL = 'diff-review/commit-diff'
+const COMMENTS_URL = 'diff-review/comments'
+const BRANCHES_URL = 'diff-review/branches'
+const REVIEW_URL = 'diff-review/review'
+const PR_URL = 'diff-review/pr'
+const REPOS_URL = 'diff-review/repos'
+const OPEN_EDITOR_URL = 'open-editor/open'
 const STYLE_TAG = 'dsh-plugin-diff-review/review.css'
 
 /** Open state shared between the header trigger (session scope) and the overlay (root scope). */
@@ -86,6 +93,27 @@ const FONT_OPTIONS: { id: string; label: string; css: string }[] = [
 ]
 
 const SIZE_OPTIONS = [11, 12, 13, 14, 16, 18]
+
+/** Review scopes of the workspace tab (aligned with the Codex review pane). */
+type WorkspaceScope = 'all' | 'unstaged' | 'staged' | 'commit' | 'branch' | 'last-turn'
+
+const SCOPE_OPTIONS: { id: WorkspaceScope; label: keyof typeof zh }[] = [
+  { id: 'all', label: 'scope.all' },
+  { id: 'unstaged', label: 'scope.unstaged' },
+  { id: 'staged', label: 'scope.staged' },
+  { id: 'commit', label: 'scope.commit' },
+  { id: 'branch', label: 'scope.branch' },
+  { id: 'last-turn', label: 'scope.last-turn' },
+]
+
+/** Browser-side absolute path check (no node:path in the client bundle). */
+function isAbsPath(p: string): boolean {
+  return p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p)
+}
+
+function baseName(p: string): string {
+  return p.split(/[\\/]/).pop() ?? p
+}
 
 const prefsStore = createSnapshotStore<Prefs>(
   { font: 'mono', size: 12, width: 1120, height: 720 },
@@ -480,6 +508,8 @@ const REVIEW_CSS = `
 .dsdr-tab{box-sizing:border-box;min-height:26px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:2px 10px;font:inherit;font-size:12px;line-height:18px}
 .dsdr-tab:hover{color:var(--dsw-alias-label-secondary)}
 .dsdr-tab-active{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsdr-scope{display:inline-flex;align-items:center;gap:6px;margin-left:8px}
+.dsdr-scope .dsdr-sel-trigger{min-width:110px;height:26px;font-size:12px;line-height:18px;padding:0 8px;background:var(--dsw-alias-bg-layer-2)}
 .dsdr-spacer{flex:1}
 .dsdr-btn{box-sizing:border-box;min-height:28px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;padding:3px 10px;font:inherit;font-size:12px;line-height:18px;display:inline-flex;align-items:center;gap:5px}
 .dsdr-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
@@ -569,12 +599,69 @@ const REVIEW_CSS = `
 .dsdr-diff-stats{font-size:11px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;flex:none}
 .dsdr-diff-scroll{flex:1;min-height:0;overflow:auto;display:flex}
 .dsdr-pre{margin:0;padding:8px 0;font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:var(--dsdr-diff-size, 12px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px);white-space:pre;min-width:100%;flex:1}
-.dsdr-line{display:flex;padding:0 16px;color:var(--dsw-alias-label-primary)}
+.dsdr-line{display:flex;align-items:flex-start;gap:10px;padding:0 16px;color:var(--dsw-alias-label-primary);position:relative}
+.dsdr-line-num{flex:none;width:34px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);opacity:.75}
+.dsdr-line-text{flex:1;min-width:0;white-space:pre}
+.dsdr-comment-add{flex:none;display:none;align-items:center;justify-content:center;width:18px;height:18px;border-radius:6px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:11px;line-height:1;padding:0;margin-top:1px}
+.dsdr-line:hover .dsdr-comment-add{display:flex}
+.dsdr-comment-add:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-label-dimmed)}
+.dsdr-comment-has{display:flex;background:rgba(88,166,255,.18);color:#58a6ff;border-color:transparent;font-variant-numeric:tabular-nums}
+.dsdr-line-commented{box-shadow:inset 3px 0 0 rgba(88,166,255,.7)}
+.dsdr-comment-editor{display:flex;flex-direction:column;gap:6px;padding:8px 16px;border-top:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2)}
+.dsdr-comment-input{box-sizing:border-box;width:100%;min-height:52px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);padding:6px 8px;font:inherit;font-size:12px;line-height:18px;resize:vertical}
+.dsdr-comment-input:focus{outline:none;border-color:var(--dsw-alias-brand-primary)}
+.dsdr-comment-actions{display:flex;gap:6px;justify-content:flex-end}
+.dsdr-comment-pop{position:absolute;z-index:20;right:16px;top:calc(100% + 2px);min-width:280px;max-width:440px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-specific-menu);border-radius:10px;box-shadow:var(--dsw-shadow-lv3);padding:8px;display:flex;flex-direction:column;gap:6px}
+.dsdr-comment-item{display:flex;flex-direction:column;gap:4px;border-bottom:1px solid var(--dsw-alias-border-l1);padding-bottom:6px}
+.dsdr-comment-item:last-child{border-bottom:0;padding-bottom:0}
+.dsdr-comment-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--dsw-font-mono)}
+.dsdr-comment-meta{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
+.dsdr-comment-meta .dsdr-btn{min-height:20px;padding:0 6px;font-size:10px;line-height:14px;margin-left:auto}
+.dsdr-openline{flex:none;display:none;align-items:center;justify-content:center;width:18px;height:18px;border:0;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:12px;line-height:1;padding:0}
+.dsdr-line:hover .dsdr-openline{display:flex}
+.dsdr-openline:hover{color:var(--dsw-alias-label-primary)}
+.dsdr-line-finding{box-shadow:inset 3px 0 0 var(--dsdr-finding-color, rgba(255,166,87,.7))}
+.dsdr-finding-P0{--dsdr-finding-color:#f85149}
+.dsdr-finding-P1{--dsdr-finding-color:#ffa657}
+.dsdr-finding-P2{--dsdr-finding-color:#d29922}
+.dsdr-finding-P3{--dsdr-finding-color:#8b949e}
+.dsdr-finding-tag{flex:none;font-size:10px;line-height:14px;border-radius:4px;padding:0 4px;font-family:var(--dsw-font-mono);font-weight:600;align-self:flex-start;margin-top:2px}
+.dsdr-finding-tag.dsdr-finding-P0{background:rgba(248,81,73,.18);color:#f85149}
+.dsdr-finding-tag.dsdr-finding-P1{background:rgba(255,166,87,.16);color:#ffa657}
+.dsdr-finding-tag.dsdr-finding-P2{background:rgba(210,153,34,.16);color:#d29922}
+.dsdr-finding-tag.dsdr-finding-P3{background:var(--dsw-alias-fill-l2);color:var(--dsw-alias-label-tertiary)}
+.dsdr-line-jump{background:rgba(88,166,255,.16)}
+.dsdr-review-strip{display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;font-size:12px;flex-wrap:wrap}
+.dsdr-review-ok{color:var(--dsw-alias-state-success-primary)}
+.dsdr-review-bad{color:var(--dsw-alias-state-error-primary)}
+.dsdr-review-model{font-size:11px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
+.dsdr-review-toggle-on{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary)}
+.dsdr-findings{display:flex;flex-direction:column;gap:4px;padding:8px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;max-height:260px;overflow-y:auto}
+.dsdr-finding-item{display:flex;gap:8px;align-items:flex-start;border-radius:8px;padding:6px 8px;cursor:pointer;border:0;background:transparent;text-align:left;font:inherit}
+.dsdr-finding-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsdr-finding-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.dsdr-finding-title{font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary);display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.dsdr-finding-loc{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono);font-weight:400}
+.dsdr-finding-detail{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);white-space:pre-wrap;overflow-wrap:anywhere}
+.dsdr-finding-meta{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
+.dsdr-finding-suggestion{display:block;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;line-height:16px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:6px;padding:4px 8px;font-family:var(--dsw-font-mono)}
+.dsdr-pr{display:flex;flex-direction:column;gap:4px;padding:4px 8px 8px}
+.dsdr-pr-item{display:flex;flex-direction:column;gap:3px;border-radius:8px;padding:6px 8px;cursor:pointer;border:0;background:transparent;text-align:left;font:inherit}
+.dsdr-pr-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsdr-pr-meta{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
+.dsdr-pr-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere}
+.dsdr-send{position:absolute;z-index:40;top:52px;right:16px;width:min(480px,calc(100% - 32px));border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-specific-menu);border-radius:12px;box-shadow:var(--dsw-shadow-lv3);padding:12px;display:flex;flex-direction:column;gap:8px}
+.dsdr-send-title{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.dsdr-send-hint{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}
+.dsdr-send-input{box-sizing:border-box;width:100%;min-height:140px;max-height:320px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);padding:8px;font:inherit;font-size:12px;line-height:18px;resize:vertical;white-space:pre-wrap}
 .dsdr-line-add{background:rgba(46,160,67,.13)}
 .dsdr-line-del{background:rgba(248,81,73,.12)}
 .dsdr-line-hunk{background:var(--dsw-alias-fill-l2);color:var(--dsw-alias-label-tertiary)}
 .dsdr-line-file{color:var(--dsw-alias-label-tertiary)}
 .dsdr-line-note{color:var(--dsw-alias-label-tertiary);font-style:italic}
+.dsdr-hunk-bar{display:flex;align-items:center;gap:6px;padding:2px 16px;border-top:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-fill-l2)}
+.dsdr-hunk-bar .dsdr-btn{min-height:22px;padding:1px 8px;font-size:11px;line-height:16px}
+.dsdr-hunk-layer{font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono);margin-right:auto}
 .dsdr-foot{display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--dsw-alias-border-l1);flex:none;min-height:36px}
 .dsdr-notice{font-size:12px;color:var(--dsw-alias-label-secondary)}
 .dsdr-notice-ok{color:var(--dsw-alias-state-success-primary)}
@@ -608,6 +695,16 @@ const REVIEW_CSS = `
 .dsdr-split-cell{display:flex;gap:8px;padding:0 8px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
 .dsdr-split-num{flex:none;width:36px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px)}
 .dsdr-split-text{flex:1;min-width:0}
+.dsdr-cell-finding{box-shadow:inset 0 0 0 1px var(--dsdr-finding-color, rgba(255,166,87,.7));background:rgba(255,166,87,.08)}
+.dsdr-cell-jump{background:rgba(88,166,255,.16)}
+.dsdr-split-finding{flex:none;font-size:9px;line-height:12px;border-radius:3px;padding:0 3px;font-family:var(--dsw-font-mono);font-weight:600;align-self:flex-start}
+.dsdr-split-finding.dsdr-finding-P0{background:rgba(248,81,73,.18);color:#f85149}
+.dsdr-split-finding.dsdr-finding-P1{background:rgba(255,166,87,.16);color:#ffa657}
+.dsdr-split-finding.dsdr-finding-P2{background:rgba(210,153,34,.16);color:#d29922}
+.dsdr-split-finding.dsdr-finding-P3{background:var(--dsw-alias-fill-l2);color:var(--dsw-alias-label-tertiary)}
+.dsdr-split-openline{flex:none;display:none;align-items:center;justify-content:center;width:16px;height:16px;border:0;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:11px;line-height:1;padding:0}
+.dsdr-split-cell:hover .dsdr-split-openline{display:flex}
+.dsdr-split-openline:hover{color:var(--dsw-alias-label-primary)}
 .dsdr-cell-add{background:rgba(46,160,67,.13)}
 .dsdr-cell-del{background:rgba(248,81,73,.12)}
 .dsdr-cell-dim{background:var(--dsw-alias-fill-l1, rgba(128,128,128,.05))}
@@ -640,6 +737,13 @@ const zh = {
   'review.revert': '丢弃',
   'review.acceptAll': '全部采纳',
   'review.revertAll': '全部丢弃',
+  'review.unstage': '取消暂存',
+  'review.unstageAll': '全部取消暂存',
+  'hunk.stage': '暂存',
+  'hunk.revert': '丢弃',
+  'hunk.unstage': '取消暂存',
+  'hunk.staged': '已暂存',
+  'hunk.unstaged': '未暂存',
   'review.confirmRevert': '再次点击确认丢弃',
   'review.confirmRevertAll': '再次点击确认全部丢弃',
   'review.commit': '提交',
@@ -669,6 +773,7 @@ const zh = {
   'review.busy': '处理中…',
   'review.done': '已{action} {count} 个文件',
   'review.doneOne': '已{action} {path}',
+  'review.doneDeleted': '已{action} {count} 个文件（删除 {deleted} 个未跟踪文件）',
   'review.accepted': '采纳',
   'review.reverted': '丢弃',
   'review.untracked': '未跟踪',
@@ -679,6 +784,51 @@ const zh = {
   'view.split': '双栏',
   'view.before': '原文件',
   'view.after': '新文件',
+  'comment.add': '评论此行',
+  'comment.show': '查看评论',
+  'comment.placeholder': '评论…（Ctrl/⌘+Enter 保存）',
+  'comment.save': '保存',
+  'comment.cancel': '取消',
+  'comment.delete': '删除',
+  'comment.saved': '已保存评论',
+  'comment.failed': '评论保存失败',
+  'scope.label': '范围',
+  'scope.all': '全部',
+  'scope.unstaged': '未暂存',
+  'scope.staged': '已暂存',
+  'scope.commit': '提交',
+  'scope.branch': '分支',
+  'scope.last-turn': '最后一轮',
+  'scope.base': '基线分支',
+  'scope.branchReadonly': '分支范围只读（对比 merge-base，不提供采纳/丢弃）',
+  'review.selectCommit': '从左侧选择提交查看 diff',
+  'review.sendToAgent': '发送给代理',
+  'review.sendTitle': '发送行内评论给代理',
+  'review.sendHint': '评论会作为评审指引注入当前会话（Address the inline comments）。发送失败时退化为复制文本。',
+  'review.sentToAgent': '已发送给代理',
+  'review.copy': '复制文本',
+  'review.copied': '已复制',
+  'review.copyFailed': '复制失败',
+  'review.review': '评审',
+  'review.reviewing': '评审中…',
+  'review.reviewFailed': '评审失败',
+  'review.verdictCorrect': '补丁正确 ✓',
+  'review.verdictIncorrect': '补丁存在问题 ✗',
+  'review.noFindings': '没有发现问题',
+  'review.findings': '{n} 条发现',
+  'review.confidence': '置信度 {confidence}',
+  'review.suggestion': '建议',
+  'review.sendFindings': '发送发现给代理',
+  'review.sentFindings': '已发送发现给代理',
+  'review.reviewScope': '评审范围',
+  'pr.title': 'PR #{number}',
+  'pr.comments': 'PR 评论 ({n})',
+  'pr.noPr': '无关联 PR',
+  'pr.sendComments': '发送 PR 评论给代理',
+  'editor.openFile': '在编辑器中打开',
+  'editor.openLine': '在编辑器中打开该行',
+  'editor.failed': '打开失败',
+  'repo.label': '仓库',
   'settings.title': '变动',
   'settings.font': '字体',
   'settings.size': '字号',
@@ -707,6 +857,13 @@ const en: Record<keyof typeof zh, string> = {
   'review.revert': 'Revert',
   'review.acceptAll': 'Accept all',
   'review.revertAll': 'Revert all',
+  'review.unstage': 'Unstage',
+  'review.unstageAll': 'Unstage all',
+  'hunk.stage': 'Stage',
+  'hunk.revert': 'Revert',
+  'hunk.unstage': 'Unstage',
+  'hunk.staged': 'staged',
+  'hunk.unstaged': 'unstaged',
   'review.confirmRevert': 'Click again to confirm revert',
   'review.confirmRevertAll': 'Click again to confirm revert all',
   'review.commit': 'Commit',
@@ -736,6 +893,7 @@ const en: Record<keyof typeof zh, string> = {
   'review.busy': 'Working…',
   'review.done': '{action} {count} files',
   'review.doneOne': '{action} {path}',
+  'review.doneDeleted': '{action} {count} files ({deleted} untracked deleted)',
   'review.accepted': 'Accepted',
   'review.reverted': 'Reverted',
   'review.untracked': 'untracked',
@@ -746,6 +904,51 @@ const en: Record<keyof typeof zh, string> = {
   'view.split': 'Split',
   'view.before': 'Before',
   'view.after': 'After',
+  'comment.add': 'Comment on this line',
+  'comment.show': 'View comments',
+  'comment.placeholder': 'Comment… (Ctrl/⌘+Enter to save)',
+  'comment.save': 'Save',
+  'comment.cancel': 'Cancel',
+  'comment.delete': 'Delete',
+  'comment.saved': 'Comment saved',
+  'comment.failed': 'Failed to save comment',
+  'scope.label': 'Scope',
+  'scope.all': 'All',
+  'scope.unstaged': 'Unstaged',
+  'scope.staged': 'Staged',
+  'scope.commit': 'Commit',
+  'scope.branch': 'Branch',
+  'scope.last-turn': 'Last turn',
+  'scope.base': 'Base branch',
+  'scope.branchReadonly': 'Branch scope is read-only (merge-base diff; no accept/revert)',
+  'review.selectCommit': 'Select a commit from the left to view its diff',
+  'review.sendToAgent': 'Send to agent',
+  'review.sendTitle': 'Send inline comments to the agent',
+  'review.sendHint': 'Comments are injected into the current session as review guidance (Address the inline comments). Falls back to copyable text if sending fails.',
+  'review.sentToAgent': 'Sent to agent',
+  'review.copy': 'Copy text',
+  'review.copied': 'Copied',
+  'review.copyFailed': 'Copy failed',
+  'review.review': 'Review',
+  'review.reviewing': 'Reviewing…',
+  'review.reviewFailed': 'Review failed',
+  'review.verdictCorrect': 'Patch is correct ✓',
+  'review.verdictIncorrect': 'Patch needs work ✗',
+  'review.noFindings': 'No issues found',
+  'review.findings': '{n} findings',
+  'review.confidence': 'confidence {confidence}',
+  'review.suggestion': 'Suggestion',
+  'review.sendFindings': 'Send findings to agent',
+  'review.sentFindings': 'Findings sent to agent',
+  'review.reviewScope': 'Review scope',
+  'pr.title': 'PR #{number}',
+  'pr.comments': 'PR comments ({n})',
+  'pr.noPr': 'No associated PR',
+  'pr.sendComments': 'Send PR comments to agent',
+  'editor.openFile': 'Open in editor',
+  'editor.openLine': 'Open this line in editor',
+  'editor.failed': 'Failed to open',
+  'repo.label': 'Repo',
   'settings.title': 'Changes',
   'settings.font': 'Font',
   'settings.size': 'Font size',
@@ -858,6 +1061,272 @@ function SplitDiff({ blocks, beforeLabel, afterLabel }: { blocks: SplitBlock[]; 
   )
 }
 
+/** Per-hunk action bar (stage / unstage / revert) for workspace diffs. */
+function HunkToolbar({
+  hunk,
+  busy,
+  onAction,
+  t,
+}: {
+  hunk: import('../shared/types.ts').DiffHunk | undefined
+  busy: boolean
+  onAction: (action: 'accept' | 'revert' | 'unstage', hunk: import('../shared/types.ts').DiffHunk) => void
+  t: (key: keyof typeof zh, params?: Record<string, unknown>) => string
+}) {
+  if (!hunk) return null
+  const staged = hunk.layer === 'staged'
+  return (
+    <div className="dsdr-hunk-bar">
+      <span className="dsdr-hunk-layer">{staged ? t('hunk.staged') : t('hunk.unstaged')}</span>
+      {staged ? (
+        <button type="button" className="dsdr-btn" disabled={busy} onClick={() => onAction('unstage', hunk)}>
+          {t('hunk.unstage')}
+        </button>
+      ) : (
+        <button type="button" className="dsdr-btn dsdr-btn-primary" disabled={busy} onClick={() => onAction('accept', hunk)}>
+          {t('hunk.stage')}
+        </button>
+      )}
+      <button type="button" className="dsdr-btn dsdr-btn-danger" disabled={busy} onClick={() => onAction('revert', hunk)}>
+        {t('hunk.revert')}
+      </button>
+    </div>
+  )
+}
+
+/** Unified diff rows with old/new line numbers tracked through hunks. */
+function unifiedRowsWithLines(rows: DiffRow[], oldStart: number, newStart: number): { row: DiffRow; oldLine: number | null; newLine: number | null }[] {
+  let oldLine = oldStart
+  let newLine = newStart
+  return rows.map((row) => {
+    if (row.kind === 'ctx') return { row, oldLine: oldLine++, newLine: newLine++ }
+    if (row.kind === 'add') return { row, oldLine: null, newLine: newLine++ }
+    if (row.kind === 'del') return { row, oldLine: oldLine++, newLine: null }
+    return { row, oldLine: null, newLine: null }
+  })
+}
+
+/** Match a comment against a row's anchors (both must agree when set). */
+function commentMatches(comment: ReviewComment, oldLine: number | null, newLine: number | null): boolean {
+  if (comment.lineNew !== null && comment.lineNew !== newLine) return false
+  if (comment.lineOld !== null && comment.lineOld !== oldLine) return false
+  return true
+}
+
+/** Hover-to-comment affordance + comment marker for one diff line. */
+function CommentLine({
+  count,
+  open,
+  onOpen,
+  onToggle,
+  t,
+}: {
+  count: number
+  open: boolean
+  onOpen: () => void
+  onToggle: () => void
+  t: (key: keyof typeof zh, params?: Record<string, unknown>) => string
+}) {
+  return (
+    <button
+      type="button"
+      className={`dsdr-comment-add${count > 0 ? ' dsdr-comment-has' : ''}`}
+      title={count > 0 ? t('comment.show') : t('comment.add')}
+      aria-label={count > 0 ? t('comment.show') : t('comment.add')}
+      onClick={count > 0 ? onToggle : onOpen}
+    >
+      {count > 0 ? count : '+'}
+    </button>
+  )
+}
+
+/** The inline comment editor, rendered as its own row. */
+function CommentEditor({
+  text,
+  onText,
+  onSave,
+  onCancel,
+  busy,
+  t,
+}: {
+  text: string
+  onText: (v: string) => void
+  onSave: () => void
+  onCancel: () => void
+  busy: boolean
+  t: (key: keyof typeof zh, params?: Record<string, unknown>) => string
+}) {
+  return (
+    <div className="dsdr-comment-editor">
+      <textarea
+        className="dsdr-comment-input"
+        value={text}
+        autoFocus
+        rows={2}
+        placeholder={t('comment.placeholder')}
+        onChange={(event) => onText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') onCancel()
+          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) onSave()
+        }}
+      />
+      <div className="dsdr-comment-actions">
+        <button type="button" className="dsdr-btn dsdr-btn-primary" disabled={busy || !text.trim()} onClick={onSave}>
+          {t('comment.save')}
+        </button>
+        <button type="button" className="dsdr-btn" disabled={busy} onClick={onCancel}>
+          {t('comment.cancel')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** Unified diff with per-hunk action bars and inline comments (workspace files). */
+function UnifiedDiff({
+  diff,
+  hunks,
+  busy,
+  onHunkAction,
+  t,
+  comments,
+  commentEditor,
+  commentText,
+  onCommentText,
+  onOpenComment,
+  onSaveComment,
+  onCancelComment,
+  commentPopover,
+  onTogglePopover,
+  onDeleteComment,
+  readOnly,
+  path,
+  reviewFindings,
+  onOpenLine,
+  jumpLine,
+}: {
+  diff: string
+  hunks: import('../shared/types.ts').DiffHunk[]
+  busy: boolean
+  onHunkAction: (action: 'accept' | 'revert' | 'unstage', hunk: import('../shared/types.ts').DiffHunk) => void
+  t: (key: keyof typeof zh, params?: Record<string, unknown>) => string
+  comments?: ReviewComment[]
+  commentEditor?: { oldLine: number | null; newLine: number | null } | null
+  commentText?: string
+  onCommentText?: (v: string) => void
+  onOpenComment?: (oldLine: number | null, newLine: number | null) => void
+  onSaveComment?: () => void
+  onCancelComment?: () => void
+  commentPopover?: string | null
+  onTogglePopover?: (key: string) => void
+  onDeleteComment?: (id: string) => void
+  /** Hide per-hunk action bars (branch scope is a read-only diff). */
+  readOnly?: boolean
+  /** Repo-relative file path (for open-in-editor and markers). */
+  path?: string
+  /** AI-review findings to mark on matching lines. */
+  reviewFindings?: ReviewFinding[]
+  /** Open the file at a line in the user's editor. */
+  onOpenLine?: (path: string, line: number) => void
+  /** Temporary line highlight (e.g. jump from a PR comment). */
+  jumpLine?: number | null
+}) {
+  const blocks = parseGitBlocks(diff)
+  let hunkIndex = 0
+  const editingKey = commentEditor ? `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` : null
+  const findingsFor = (oldLine: number | null, newLine: number | null): ReviewFinding[] => {
+    if (!path || !reviewFindings || reviewFindings.length === 0) return []
+    return reviewFindings.filter((f) => {
+      if (f.file !== path) return false
+      if (newLine !== null) return newLine >= f.lineStart && newLine <= f.lineEnd
+      return oldLine !== null && oldLine >= f.lineStart && oldLine <= f.lineEnd
+    })
+  }
+  return (
+    <div className="dsdr-diff-scroll">
+      <pre className="dsdr-pre">
+        {blocks.map((block, bi) => {
+          const isHunk = block.head?.kind === 'hunk'
+          const hunk = isHunk ? hunks[hunkIndex++] : undefined
+          const starts = block.head?.kind === 'hunk' ? hunkStarts(block.head.text) : { oldStart: 1, newStart: 1 }
+          const rows = isHunk ? unifiedRowsWithLines(block.rows, starts.oldStart, starts.newStart) : []
+          return (
+            <Fragment key={bi}>
+              {isHunk && !readOnly ? <HunkToolbar hunk={hunk} busy={busy} onAction={onHunkAction} t={t} /> : null}
+              {block.head ? <div className={`dsdr-line dsdr-line-${block.head.kind}`}>{block.head.text || ' '}</div> : null}
+              {isHunk
+                ? rows.map(({ row, oldLine, newLine }, ri) => {
+                    const key = `${oldLine ?? 'o'}:${newLine ?? 'n'}`
+                    const rowComments = comments?.filter((c) => commentMatches(c, oldLine, newLine)) ?? []
+                    const findings = findingsFor(oldLine, newLine)
+                    const editing = editingKey === key
+                    const showActions = row.kind === 'ctx' || row.kind === 'add' || row.kind === 'del'
+                    const findingCls = findings.length > 0 ? ` dsdr-line-finding dsdr-finding-${findings[0].priority}` : ''
+                    const jumped = jumpLine != null && (newLine === jumpLine || (newLine === null && oldLine === jumpLine))
+                    return (
+                      <Fragment key={ri}>
+                        <div className={`dsdr-line dsdr-line-${row.kind}${rowComments.length > 0 ? ' dsdr-line-commented' : ''}${findingCls}${jumped ? ' dsdr-line-jump' : ''}`}>
+                          <span className="dsdr-line-num">{newLine ?? oldLine ?? ''}</span>
+                          <span className="dsdr-line-text">{row.text || ' '}</span>
+                          {showActions ? (
+                            <>
+                              {findings.length > 0 ? (
+                                <span className={`dsdr-finding-tag dsdr-finding-${findings[0].priority}`} title={findings[0].title}>
+                                  {findings[0].priority}
+                                  {findings.length > 1 ? `×${findings.length}` : ''}
+                                </span>
+                              ) : null}
+                              {path && onOpenLine && (newLine ?? oldLine) ? (
+                                <button
+                                  type="button"
+                                  className="dsdr-openline"
+                                  title={t('editor.openLine')}
+                                  aria-label={t('editor.openLine')}
+                                  onClick={() => onOpenLine(path, newLine ?? oldLine ?? 1)}
+                                >
+                                  ↗
+                                </button>
+                              ) : null}
+                              <CommentLine
+                                count={rowComments.length}
+                                open={commentPopover === key}
+                                onOpen={() => onOpenComment?.(oldLine, newLine)}
+                                onToggle={() => onTogglePopover?.(key)}
+                                t={t}
+                              />
+                            </>
+                          ) : null}
+                        </div>
+                        {showActions && rowComments.length > 0 && commentPopover === key ? (
+                          <div className="dsdr-comment-pop">
+                            {rowComments.map((comment) => (
+                              <div key={comment.id} className="dsdr-comment-item">
+                                <div className="dsdr-comment-text">{comment.text}</div>
+                                <div className="dsdr-comment-meta">
+                                  <span>{comment.path}</span>
+                                  <button type="button" className="dsdr-btn dsdr-btn-danger" disabled={busy} onClick={() => onDeleteComment?.(comment.id)}>
+                                    {t('comment.delete')}
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                        {editing ? <CommentEditor text={commentText ?? ''} onText={onCommentText ?? (() => {})} onSave={onSaveComment ?? (() => {})} onCancel={onCancelComment ?? (() => {})} busy={busy} t={t} /> : null}
+                      </Fragment>
+                    )
+                  })
+                : block.rows.map((row, ri) => (
+                    <div key={ri} className={`dsdr-line dsdr-line-${row.kind}`}>{row.text || ' '}</div>
+                  ))}
+            </Fragment>
+          )
+        })}
+      </pre>
+    </div>
+  )
+}
+
 /** Status chip color class for a workspace change. */
 /** Drag handle for resizing the panel (east / south / south-east). */
 function ResizeHandle({ mode, onResize }: { mode: 'e' | 's' | 'se'; onResize: (dx: number, dy: number) => void }) {
@@ -904,13 +1373,23 @@ async function loadStatus(cwd: string): Promise<StatusResponse> {
   return (await res.json()) as StatusResponse
 }
 
-async function applyChanges(cwd: string, action: 'accept' | 'revert', path?: string): Promise<ApplyResponse> {
+async function applyChanges(cwd: string, action: 'accept' | 'revert' | 'unstage', path?: string): Promise<ApplyResponse> {
   const res = await fetch(APPLY_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ cwd, action, path }),
   })
   return (await res.json().catch(() => ({ ok: false, error: 'invalid response' }))) as ApplyResponse
+}
+
+/** Apply one hunk of one file (stage / unstage / revert). */
+async function applyHunk(cwd: string, path: string, action: 'accept' | 'revert' | 'unstage', hunk: string): Promise<ApplyHunkResponse> {
+  const res = await fetch(APPLY_HUNK_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ cwd, path, action, hunk }),
+  })
+  return (await res.json().catch(() => ({ ok: false, error: 'invalid response' }))) as ApplyHunkResponse
 }
 
 async function runGitAction(cwd: string, action: 'commit' | 'push', message?: string): Promise<GitResponse> {
@@ -933,6 +1412,64 @@ async function loadHistory(cwd: string): Promise<HistoryResponse> {
 async function loadCommitDiff(cwd: string, hash: string): Promise<CommitDiffResponse> {
   const res = await fetch(`${COMMIT_DIFF_URL}?cwd=${encodeURIComponent(cwd)}&hash=${encodeURIComponent(hash)}`, { headers: { accept: 'application/json' } })
   return (await res.json().catch(() => ({ ok: false, diff: '', files: [], added: 0, deleted: 0, error: 'invalid response' }))) as CommitDiffResponse
+}
+
+/** Inline review comments for the workspace (repo-scoped). */
+async function loadComments(cwd: string): Promise<ReviewComment[]> {
+  const res = await fetch(`${COMMENTS_URL}?cwd=${encodeURIComponent(cwd)}`, { headers: { accept: 'application/json' } })
+  const data = (await res.json().catch(() => ({ ok: false, comments: [] }))) as CommentsResponse
+  return data.ok ? data.comments : []
+}
+
+/** Replace the whole comment list (single-user replace semantics). */
+async function saveComments(cwd: string, comments: ReviewComment[]): Promise<boolean> {
+  const res = await fetch(COMMENTS_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ cwd, comments }),
+  })
+  const data = (await res.json().catch(() => ({ ok: false }))) as CommentsResponse
+  return data.ok === true
+}
+
+/** Local branch names (for the Branch review scope). */
+async function loadBranches(cwd: string): Promise<string[]> {
+  const res = await fetch(`${BRANCHES_URL}?cwd=${encodeURIComponent(cwd)}`, { headers: { accept: 'application/json' } })
+  const data = (await res.json().catch(() => ({ ok: false, branches: [] }))) as { ok: boolean; branches: string[] }
+  return data.ok ? data.branches : []
+}
+
+/** Run an AI review over the given scope. */
+async function runReview(cwd: string, sessionId: string | null, scope: 'uncommitted' | 'branch' | 'commit', base?: string, commitHash?: string): Promise<ReviewResponse> {
+  const res = await fetch(REVIEW_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ cwd, sessionId: sessionId ?? undefined, scope, base, commitHash }),
+  })
+  return (await res.json().catch(() => ({ ok: false, findings: [], error: 'invalid response' }))) as ReviewResponse
+}
+
+/** Current branch's GitHub PR context (degrades gracefully without gh). */
+async function loadPr(cwd: string): Promise<PrResponse> {
+  const res = await fetch(`${PR_URL}?cwd=${encodeURIComponent(cwd)}`, { headers: { accept: 'application/json' } })
+  return (await res.json().catch(() => ({ ok: false, comments: [], error: 'invalid response' }))) as PrResponse
+}
+
+/** Git repos under a workspace (multi-repo selector). */
+async function loadRepos(cwd: string): Promise<ReposResponse> {
+  const res = await fetch(`${REPOS_URL}?cwd=${encodeURIComponent(cwd)}`, { headers: { accept: 'application/json' } })
+  return (await res.json().catch(() => ({ ok: false, repos: [], error: 'invalid response' }))) as ReposResponse
+}
+
+/** Open a file (optionally at a line) in the user's editor via open-editor. */
+async function openInEditor(cwd: string, path: string, line?: number): Promise<{ ok: boolean; error?: string }> {
+  const abs = path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path) ? path : `${cwd}/${path}`
+  const res = await fetch(OPEN_EDITOR_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: abs, line }),
+  })
+  return (await res.json().catch(() => ({ ok: false, error: 'invalid response' }))) as { ok: boolean; error?: string }
 }
 
 /** Short relative time for commit rows ("just now" / "3 min ago" / …). */
@@ -1207,6 +1744,41 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const [commitDiff, setCommitDiff] = useState<CommitDiffResponse | null>(null)
   const [commitDiffLoading, setCommitDiffLoading] = useState(false)
   const [selectedCommitFile, setSelectedCommitFile] = useState<string | null>(null)
+  // Inline review comments (workspace tab, single view).
+  const [comments, setComments] = useState<ReviewComment[]>([])
+  const [commentEditor, setCommentEditor] = useState<{ oldLine: number | null; newLine: number | null } | null>(null)
+  const [commentText, setCommentText] = useState('')
+  const [commentPopover, setCommentPopover] = useState<string | null>(null)
+  // Review scope: which slice of the repository the workspace tab shows.
+  const [scope, setScope] = useState<WorkspaceScope>('all')
+  const [branches, setBranches] = useState<string[]>([])
+  const [baseBranch, setBaseBranch] = useState<string | null>(null)
+  const [baseStatus, setBaseStatus] = useState<StatusResponse | null>(null)
+  // Feedback loop: send inline comments to the agent (session.prompt, copy fallback).
+  const [sendOpen, setSendOpen] = useState(false)
+  const [sendText, setSendText] = useState('')
+  // AI review (/review): findings + verdict.
+  const [review, setReview] = useState<ReviewResponse | null>(null)
+  const [reviewing, setReviewing] = useState(false)
+  // GitHub PR context (gh CLI).
+  const [pr, setPr] = useState<PrResponse | null>(null)
+  // Multi-repo: repos detected under the workspace + the selected one.
+  const [repos, setRepos] = useState<{ path: string; branch: string | null }[]>([])
+  const [repoPath, setRepoPath] = useState<string | null>(null)
+  // Temporary line highlight (jump target from a PR comment or a finding).
+  const [jumpLine, setJumpLine] = useState<number | null>(null)
+  // Findings list panel visibility.
+  const [findingsOpen, setFindingsOpen] = useState(false)
+
+  /** Select a file and flash its line (findings / PR comments). */
+  const jumpTo = (file: string, line?: number) => {
+    setSelected(file)
+    setSelectedCommit(null)
+    setSelectedCommitFile(null)
+    setCommitDiff(null)
+    setJumpLine(line ?? null)
+    setTimeout(() => setJumpLine(null), 2500)
+  }
   // Collapsed directories in the left-hand file tree (shared across tabs).
   const [collapsedDirs, setCollapsedDirs] = useState<ReadonlySet<string>>(() => new Set())
   const toggleDir = useMemo(
@@ -1256,15 +1828,33 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   }, [rounds, selectedRound, selectedPath])
 
   const cwd = storeState.cwd
+  /** Active git repo for workspace operations (multi-repo selector override). */
+  const activeCwd = repoPath ?? cwd
 
   const loadWorkspace = async (silent = false) => {
-    if (!cwd) return
+    if (!activeCwd) return
     if (!silent) setLoading(true)
     setError(null)
     try {
-      const [next, hist] = await Promise.all([loadStatus(cwd), loadHistory(cwd)])
+      const [next, hist, nextComments, branchList, prData, repoList] = await Promise.all([
+        loadStatus(activeCwd),
+        loadHistory(activeCwd),
+        loadComments(activeCwd),
+        loadBranches(activeCwd),
+        loadPr(activeCwd),
+        loadRepos(activeCwd),
+      ])
       setStatus(next)
       if (hist.ok) setHistory(hist.commits)
+      setComments(nextComments)
+      setBranches(branchList)
+      setPr(prData)
+      setRepos(repoList.repos)
+      // Default the repo selector to the workspace root when it is itself a repo.
+      if (repoPath === null && !repoList.repos.some((r) => r.path === activeCwd)) {
+        const first = repoList.repos[0]
+        if (first && first.path !== cwd) setRepoPath(first.path)
+      }
       if (next.error && !next.isRepo) setError(next.error)
       setSelected((prev) => (prev && next.files.some((f) => f.path === prev) ? prev : next.files[0]?.path ?? null))
     } catch (e) {
@@ -1280,27 +1870,63 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const workspaceCwdRef = useRef<string | null>(null)
   useEffect(() => {
     const previous = workspaceCwdRef.current
-    workspaceCwdRef.current = cwd ?? null
-    if (tab !== 'workspace' || !cwd) return
-    if (previous !== cwd) {
+    workspaceCwdRef.current = activeCwd ?? null
+    if (tab !== 'workspace' || !activeCwd) return
+    if (previous !== activeCwd) {
       setSelectedCommit(null)
       setCommitDiff(null)
       setSelectedCommitFile(null)
       setHistory([])
+      setComments([])
+      setCommentEditor(null)
+      setCommentPopover(null)
+      setReview(null)
+      setPr(null)
     }
     void loadWorkspace()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, cwd])
+  }, [tab, activeCwd])
 
   // Keep staged/unstaged/history fresh while the workspace tab is open.
   useEffect(() => {
-    if (!storeState.open || tab !== 'workspace' || !cwd) return
+    if (!storeState.open || tab !== 'workspace' || !activeCwd) return
     const timer = setInterval(() => {
       void loadWorkspace(true)
     }, 15000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeState.open, tab, cwd])
+  }, [storeState.open, tab, activeCwd])
+
+  // Branch scope: diff the worktree against the selected base branch.
+  // Default the base to the first branch that isn't the current one.
+  useEffect(() => {
+    if (scope !== 'branch' || !activeCwd) return
+    const current = status?.branch ?? null
+    if (baseBranch === null && branches.length > 0) {
+      const fallback = branches.find((b) => b !== current) ?? branches[0]
+      setBaseBranch(fallback)
+    }
+  }, [scope, activeCwd, branches, baseBranch, status?.branch])
+
+  useEffect(() => {
+    if (scope !== 'branch' || !activeCwd || !baseBranch) {
+      setBaseStatus(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const res = await fetch(`${STATUS_URL}?cwd=${encodeURIComponent(activeCwd)}&base=${encodeURIComponent(baseBranch)}`, { headers: { accept: 'application/json' } })
+      const data = (await res.json().catch(() => null)) as StatusResponse | null
+      if (!cancelled && data) {
+        setBaseStatus(data)
+        if (data.error && baseStatus?.error !== data.error) setError(data.error)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope, activeCwd, baseBranch])
 
   // Default selection for the session tab follows the first round with changes.
   useEffect(() => {
@@ -1332,10 +1958,52 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const files = status?.isRepo ? status.files : []
   const stagedFiles = useMemo(() => files.filter((f) => f.staged), [files])
   const unstagedFiles = useMemo(() => files.filter((f) => !f.staged), [files])
+
+  // "Last turn" scope: paths the agent touched in the most recent round.
+  const lastRoundPaths = useMemo(() => {
+    const set = new Set<string>()
+    const last = rounds[rounds.length - 1]
+    if (!last || !cwd) return set
+    for (const change of last.changes) {
+      set.add(change.path)
+      const p = change.path
+      if (isAbsPath(p)) {
+        const rel = p.startsWith(cwd) ? p.slice(cwd.length).replace(/^[\\/]+/, '') : p
+        set.add(rel)
+        set.add(baseName(p))
+      } else {
+        set.add(baseName(p))
+      }
+    }
+    return set
+  }, [rounds, cwd])
+
+  /** The file slice the current scope shows. */
+  const scopeFiles = useMemo(() => {
+    switch (scope) {
+      case 'unstaged':
+        return unstagedFiles
+      case 'staged':
+        return stagedFiles
+      case 'branch':
+        return baseStatus?.files ?? []
+      case 'last-turn':
+        return lastRoundPaths.size > 0 ? files.filter((f) => lastRoundPaths.has(f.path) || lastRoundPaths.has(baseName(f.path))) : []
+      default:
+        return files
+    }
+  }, [scope, unstagedFiles, stagedFiles, baseStatus, files, lastRoundPaths])
+
+  /** Scopes where file/hunk accept·revert·unstage and commit/push make sense. */
+  const allowActions = scope !== 'branch' && scope !== 'commit'
+
+  /** Files the current scope can hand to the AI review. */
+  const reviewableFiles = scope === 'branch' ? baseStatus?.files?.length ?? 0 : files.length
   const stagedCount = stagedFiles.length
   // NOTE: hooks must all run before the early return below (React hook order).
   const stagedTree = useMemo(() => buildFileTree(stagedFiles, (f) => f.path), [stagedFiles])
   const unstagedTree = useMemo(() => buildFileTree(unstagedFiles, (f) => f.path), [unstagedFiles])
+  const scopeTree = useMemo(() => buildFileTree(scopeFiles, (f) => f.path), [scopeFiles])
   const commitFilesTree = useMemo(
     () => (commitDiff?.ok ? buildFileTree(commitDiff.files, (f) => f.path) : []),
     [commitDiff],
@@ -1343,7 +2011,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
 
   if (!storeState.open || !cwd) return null
 
-  const selectedFile = files.find((f) => f.path === selected) ?? null
+  const selectedFile = scopeFiles.find((f) => f.path === selected) ?? null
   const totalAdded = files.reduce((n, f) => n + f.added, 0)
   const totalDeleted = files.reduce((n, f) => n + f.deleted, 0)
 
@@ -1367,6 +2035,8 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
         setSelectedCommitFile(null)
         setCommitDiff(null)
         setConfirm(null)
+        setCommentEditor(null)
+        setCommentPopover(null)
       }}
     >
       <span className={`dsdr-chip ${chipClass(file.status)}`}>{file.untracked ? '??' : file.status}</span>
@@ -1377,18 +2047,21 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     </button>
   )
 
-  const runApply = async (action: 'accept' | 'revert', path?: string) => {
+  const runApply = async (action: 'accept' | 'revert' | 'unstage', path?: string) => {
     setBusy(true)
     setNotice(null)
     setConfirm(null)
     try {
-      const result = await applyChanges(cwd, action, path)
+      const result = await applyChanges(activeCwd ?? cwd ?? '', action, path)
       if (result.ok) {
+        const verb = action === 'accept' ? t('review.accepted') : action === 'unstage' ? t('review.unstaged') : t('review.reverted')
         setNotice({
           kind: 'ok',
           text: path
-            ? t('review.doneOne', { action: action === 'accept' ? t('review.accepted') : t('review.reverted'), path })
-            : t('review.done', { action: action === 'accept' ? t('review.accepted') : t('review.reverted'), count: files.length }),
+            ? t('review.doneOne', { action: verb, path })
+            : result.deleted && result.deleted.length > 0
+              ? t('review.doneDeleted', { action: verb, count: files.length, deleted: result.deleted.length })
+              : t('review.done', { action: verb, count: files.length }),
         })
         await loadWorkspace(true)
       } else {
@@ -1401,7 +2074,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     }
   }
 
-  const onFileAction = (action: 'accept' | 'revert', path: string) => {
+  const onFileAction = (action: 'accept' | 'revert' | 'unstage', path: string) => {
     if (action === 'revert' && confirm !== 'file') {
       setConfirm('file')
       setTimeout(() => setConfirm((c) => (c === 'file' ? null : c)), 2500)
@@ -1419,15 +2092,225 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     void runApply(action)
   }
 
+  /** Apply one hunk (stage / unstage / revert) of the selected file. */
+  const onHunkAction = async (action: 'accept' | 'revert' | 'unstage', hunk: DiffHunk) => {
+    if (!selectedFile || busy) return
+    setBusy(true)
+    setNotice(null)
+    try {
+      const result = await applyHunk(activeCwd ?? cwd ?? '', selectedFile.path, action, hunk.text)
+      if (result.ok) {
+        const verb = action === 'accept' ? t('review.accepted') : action === 'unstage' ? t('review.unstaged') : t('review.reverted')
+        setNotice({ kind: 'ok', text: t('review.doneOne', { action: verb, path: selectedFile.path }) })
+        await loadWorkspace(true)
+      } else {
+        setNotice({ kind: 'error', text: result.error || t('review.loadError') })
+      }
+    } catch (e) {
+      setNotice({ kind: 'error', text: e instanceof Error ? e.message : t('review.loadError') })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // ---- inline comments ----
+  const openComment = (oldLine: number | null, newLine: number | null) => {
+    if (busy) return
+    setCommentEditor({ oldLine, newLine })
+    setCommentText('')
+    setCommentPopover(null)
+  }
+
+  const saveComment = async () => {
+    if (!selectedFile || !commentEditor || busy) return
+    const text = commentText.trim()
+    if (!text) return
+    const comment: ReviewComment = {
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      path: selectedFile.path,
+      lineNew: commentEditor.newLine,
+      lineOld: commentEditor.oldLine,
+      text,
+      createdAt: new Date().toISOString(),
+    }
+    setBusy(true)
+    try {
+      const next = [...comments, comment]
+      if (activeCwd && (await saveComments(activeCwd, next))) {
+        setComments(next)
+        setCommentEditor(null)
+        setCommentText('')
+        setNotice({ kind: 'ok', text: t('comment.saved') })
+      } else {
+        setNotice({ kind: 'error', text: t('comment.failed') })
+      }
+    } catch (e) {
+      setNotice({ kind: 'error', text: e instanceof Error ? e.message : t('comment.failed') })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const cancelComment = () => {
+    setCommentEditor(null)
+    setCommentText('')
+  }
+
+  const deleteComment = async (id: string) => {
+    if (busy) return
+    const next = comments.filter((c) => c.id !== id)
+    setBusy(true)
+    try {
+      if (activeCwd && (await saveComments(activeCwd, next))) {
+        setComments(next)
+      } else {
+        setNotice({ kind: 'error', text: t('comment.failed') })
+      }
+    } catch (e) {
+      setNotice({ kind: 'error', text: e instanceof Error ? e.message : t('comment.failed') })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // ---- AI review (/review): run, re-run, and hand findings to the agent ----
+  const onReview = async () => {
+    if (!activeCwd || reviewing || busy) return
+    setReviewing(true)
+    setReview(null)
+    setNotice(null)
+    try {
+      const reviewScope = scope === 'branch' ? 'branch' : scope === 'commit' && selectedCommit ? 'commit' : 'uncommitted'
+      const result = await runReview(activeCwd, currentId ?? null, reviewScope, baseBranch ?? undefined, selectedCommit?.hash ?? undefined)
+      if (result.ok) {
+        setReview(result)
+      } else {
+        setNotice({ kind: 'error', text: result.error || t('review.reviewFailed') })
+      }
+    } catch (e) {
+      setNotice({ kind: 'error', text: e instanceof Error ? e.message : t('review.reviewFailed') })
+    } finally {
+      setReviewing(false)
+    }
+  }
+
+  /** Compose a "send to agent" message from findings or PR comments. */
+  const composeFindingsMessage = (): string => {
+    const byPath = new Map<string, ReviewFinding[]>()
+    for (const f of review?.findings ?? []) {
+      const list = byPath.get(f.file)
+      if (list) list.push(f)
+      else byPath.set(f.file, [f])
+    }
+    const lines: string[] = ['请处理以下 AI 评审发现（Address the review findings，保持改动范围最小）：', '']
+    for (const [path, list] of byPath) {
+      lines.push(`## ${path}`)
+      for (const f of list) {
+        const range = f.lineStart === f.lineEnd ? `:${f.lineStart}` : `:${f.lineStart}-${f.lineEnd}`
+        lines.push(`- [${f.priority}] ${path}${range}: ${f.title} — ${f.detail}`)
+        if (f.suggestion) lines.push(`  \`\`\`\n${f.suggestion}\n  \`\`\``)
+      }
+      lines.push('')
+    }
+    return lines.join('\n')
+  }
+
+  const composePrMessage = (): string => {
+    if (!pr?.pr || pr.comments.length === 0) return ''
+    const lines: string[] = [`请处理 PR #${pr.pr.number}（${pr.pr.title}）的评论（Address the PR comments，保持改动范围最小）：`, '']
+    for (const c of pr.comments) {
+      const anchor = c.path ? `${c.path}${c.line ? `:${c.line}` : ''}` : 'general'
+      lines.push(`- ${anchor} (${c.author}): ${c.body}`)
+    }
+    return lines.join('\n')
+  }
+
+  const openSendPanelWith = (text: string) => {
+    setSendText(text)
+    setSendOpen(true)
+  }
+
+  // ---- editor integration (via dsh-plugin-open-editor) ----
+  const openFile = async (path: string, line?: number) => {
+    if (!activeCwd || busy) return
+    const result = await openInEditor(activeCwd, path, line)
+    if (!result.ok) setNotice({ kind: 'error', text: `${t('editor.failed')}: ${result.error ?? ''}` })
+  }
+
+  /** Jump from a PR comment to the file (and highlight the line). */
+  const onPrCommentClick = (path: string | null | undefined, line: number | null | undefined) => {
+    if (path) jumpTo(path, line ?? undefined)
+    else setJumpLine(null)
+  }
+
+  // ---- feedback loop: comments → agent (prompt injection, copy fallback) ----
+  const composeReviewMessage = (): string => {
+    if (comments.length === 0) return ''
+    const byPath = new Map<string, ReviewComment[]>()
+    for (const c of comments) {
+      const list = byPath.get(c.path)
+      if (list) list.push(c)
+      else byPath.set(c.path, [c])
+    }
+    const lines: string[] = [
+      '请处理以下针对当前工作区的行内评审评论（Address the inline comments，保持改动范围最小）：',
+      '',
+    ]
+    for (const [path, list] of byPath) {
+      lines.push(`## ${path}`)
+      for (const c of list) {
+        const anchor = c.lineNew !== null ? `:${c.lineNew}` : ` (old line ${c.lineOld})`
+        lines.push(`- ${path}${anchor}: ${c.text}`)
+      }
+      lines.push('')
+    }
+    return lines.join('\n')
+  }
+
+  const openSendPanel = () => {
+    setSendText(composeReviewMessage())
+    setSendOpen(true)
+  }
+
+  const sendToAgent = async () => {
+    const text = sendText.trim()
+    if (!text || busy) return
+    setBusy(true)
+    try {
+      const binding = currentId ? sessions.binding(currentId) : undefined
+      const session = binding?.session
+      if (session) {
+        const result = await session.prompt([{ type: 'text', text }], 'queue')
+        if (result.ok) {
+          setSendOpen(false)
+          setNotice({ kind: 'ok', text: t('review.sentToAgent') })
+          return
+        }
+      }
+    } catch {
+      // fall through to the copy fallback
+    } finally {
+      setBusy(false)
+    }
+    // Fallback: copy the composed review text.
+    try {
+      await navigator.clipboard.writeText(text)
+      setSendOpen(false)
+      setNotice({ kind: 'ok', text: t('review.copied') })
+    } catch {
+      setNotice({ kind: 'error', text: t('review.copyFailed') })
+    }
+  }
+
   /** Commit the staged changes with the entered message. */
   const onCommit = async () => {
     const message = commitMessage.trim()
-    if (!message || busy) return
+    if (!message || busy || !activeCwd) return
     setBusy(true)
     setNotice(null)
     setConfirm(null)
     try {
-      const result = await runGitAction(cwd, 'commit', message)
+      const result = await runGitAction(activeCwd, 'commit', message)
       if (result.ok) {
         setCommitMessage('')
         const summary = result.hash ? `${result.hash} ${result.subject ?? ''}`.trim() : (result.subject ?? '')
@@ -1445,7 +2328,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
 
   /** Push the current branch (double-click to confirm). */
   const onPush = () => {
-    if (busy) return
+    if (busy || !activeCwd) return
     if (confirm !== 'push') {
       setConfirm('push')
       setTimeout(() => setConfirm((c) => (c === 'push' ? null : c)), 2500)
@@ -1456,7 +2339,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       setBusy(true)
       setNotice(null)
       try {
-        const result = await runGitAction(cwd, 'push')
+        const result = await runGitAction(activeCwd, 'push')
         if (result.ok) {
           setNotice({ kind: 'ok', text: t('review.pushed') })
         } else {
@@ -1473,13 +2356,14 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
 
   /** Select a local commit and load its diff into the right pane. */
   const selectCommit = (commit: CommitInfo) => {
+    if (!activeCwd) return
     setSelected(null)
     setSelectedCommit(commit)
     setSelectedCommitFile(null)
     setConfirm(null)
     setCommitDiff(null)
     setCommitDiffLoading(true)
-    void loadCommitDiff(cwd, commit.hash)
+    void loadCommitDiff(activeCwd, commit.hash)
       .then((d) => {
         setCommitDiff(d)
         setCommitDiffLoading(false)
@@ -1556,6 +2440,39 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               {t('tab.workspace')}
             </button>
           </span>
+          {tab === 'workspace' && status?.isRepo ? (
+            <span className="dsdr-scope">
+              {repos.length > 1 ? (
+                <ThemeSelect
+                  ariaLabel={t('repo.label')}
+                  value={repoPath ?? activeCwd ?? ''}
+                  options={repos.map((r) => ({ value: r.path, label: `${baseName(r.path)}${r.branch ? ` (${r.branch})` : ''}` }))}
+                  onChange={(v) => {
+                    setRepoPath(v)
+                    setSelected(null)
+                    setReview(null)
+                  }}
+                />
+              ) : null}
+              <ThemeSelect
+                ariaLabel={t('scope.label')}
+                value={scope}
+                options={SCOPE_OPTIONS.map((s) => ({ value: s.id, label: t(s.label) }))}
+                onChange={(v) => {
+                  setScope(v as WorkspaceScope)
+                  setSelected(null)
+                }}
+              />
+              {scope === 'branch' ? (
+                <ThemeSelect
+                  ariaLabel={t('scope.base')}
+                  value={baseBranch ?? ''}
+                  options={branches.map((b) => ({ value: b, label: b }))}
+                  onChange={setBaseBranch}
+                />
+              ) : null}
+            </span>
+          ) : null}
           <span className="dsdr-subtitle">
             {tab === 'session'
               ? t('review.sessionStats', { rounds: rounds.length, files: totalSessionFiles })
@@ -1564,11 +2481,16 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                 : t('review.notRepo')}
           </span>
           <span className="dsdr-spacer" />
-          {tab === 'workspace' ? (
+          {tab === 'workspace' && allowActions ? (
             <>
               <button type="button" className="dsdr-btn dsdr-btn-primary" disabled={busy || files.length === 0} onClick={() => onAllAction('accept')}>
                 {t('review.acceptAll')}
               </button>
+              {stagedCount > 0 ? (
+                <button type="button" className="dsdr-btn" disabled={busy} onClick={() => void runApply('unstage')}>
+                  {t('review.unstageAll')}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className={`dsdr-btn dsdr-btn-danger${confirm === 'all' ? ' dsdr-btn-confirm' : ''}`}
@@ -1593,10 +2515,113 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               </button>
             </>
           ) : null}
+          {tab === 'workspace' && status?.isRepo && reviewableFiles > 0 ? (
+            <button
+              type="button"
+              className="dsdr-btn dsdr-btn-primary"
+              disabled={busy || reviewing}
+              onClick={() => void onReview()}
+              title={t('review.reviewScope')}
+            >
+              {reviewing ? t('review.reviewing') : t('review.review')}
+            </button>
+          ) : null}
+          {tab === 'workspace' && status?.isRepo && comments.length > 0 ? (
+            <button type="button" className="dsdr-btn" disabled={busy} onClick={openSendPanel}>
+              {t('review.sendToAgent')} ({comments.length})
+            </button>
+          ) : null}
           <button type="button" className="dsdr-btn" aria-label={t('review.close')} onClick={close}>
             <IconX />
           </button>
         </div>
+
+        {sendOpen ? (
+          <div className="dsdr-send">
+            <span className="dsdr-send-title">{t('review.sendTitle')}</span>
+            <span className="dsdr-send-hint">{t('review.sendHint')}</span>
+            <textarea className="dsdr-send-input" readOnly value={sendText} spellCheck={false} />
+            <div className="dsdr-comment-actions">
+              <button type="button" className="dsdr-btn" disabled={busy} onClick={() => setSendOpen(false)}>
+                {t('comment.cancel')}
+              </button>
+              <button
+                type="button"
+                className="dsdr-btn"
+                disabled={busy}
+                onClick={() => {
+                  void navigator.clipboard?.writeText(sendText).then(
+                    () => setNotice({ kind: 'ok', text: t('review.copied') }),
+                    () => setNotice({ kind: 'error', text: t('review.copyFailed') }),
+                  )
+                }}
+              >
+                {t('review.copy')}
+              </button>
+              <button type="button" className="dsdr-btn dsdr-btn-primary" disabled={busy || !sendText.trim()} onClick={() => void sendToAgent()}>
+                {t('review.sendToAgent')}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {tab === 'workspace' && review?.ok && reviewableFiles > 0 ? (
+          <>
+            <div className="dsdr-review-strip">
+              <span className={review.verdict === 'incorrect' ? 'dsdr-review-bad' : 'dsdr-review-ok'}>
+                {review.verdict === 'incorrect' ? t('review.verdictIncorrect') : t('review.verdictCorrect')}
+              </span>
+              {review.findings.length > 0 ? (
+                <button
+                  type="button"
+                  className={`dsdr-btn dsdr-review-toggle${findingsOpen ? ' dsdr-review-toggle-on' : ''}`}
+                  onClick={() => setFindingsOpen((v) => !v)}
+                >
+                  {t('review.findings', { n: review.findings.length })}
+                  {review.truncated ? ' (truncated)' : ''}
+                </button>
+              ) : (
+                <span>
+                  {t('review.noFindings')}
+                  {review.truncated ? ' (truncated)' : ''}
+                </span>
+              )}
+              {review.model ? <span className="dsdr-review-model">{review.model.provider}/{review.model.model}</span> : null}
+              <span className="dsdr-spacer" />
+              {review.findings.length > 0 ? (
+                <button type="button" className="dsdr-btn" disabled={busy} onClick={() => openSendPanelWith(composeFindingsMessage())}>
+                  {t('review.sendFindings')}
+                </button>
+              ) : null}
+            </div>
+            {findingsOpen && review.findings.length > 0 ? (
+              <div className="dsdr-findings">
+                {review.findings.map((finding, i) => (
+                  <button
+                    key={`${finding.file}:${finding.lineStart}-${finding.lineEnd}:${i}`}
+                    type="button"
+                    className="dsdr-finding-item"
+                    onClick={() => jumpTo(finding.file, finding.lineStart)}
+                  >
+                    <span className={`dsdr-finding-tag dsdr-finding-${finding.priority}`}>{finding.priority}</span>
+                    <span className="dsdr-finding-body">
+                      <span className="dsdr-finding-title">
+                        {finding.title}
+                        <span className="dsdr-finding-loc">{finding.file}:{finding.lineStart}{finding.lineEnd !== finding.lineStart ? `-${finding.lineEnd}` : ''}</span>
+                      </span>
+                      {finding.detail ? <span className="dsdr-finding-detail">{finding.detail}</span> : null}
+                      <span className="dsdr-finding-meta">
+                        {t('review.confidence', { confidence: finding.confidence.toFixed(2) })}
+                        {finding.suggestion ? ` · ${t('review.suggestion')}` : ''}
+                      </span>
+                      {finding.suggestion ? <code className="dsdr-finding-suggestion">{finding.suggestion}</code> : null}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : null}
 
         {tab === 'session' ? (
           rounds.length === 0 ? (
@@ -1678,31 +2703,102 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
         ) : status?.isRepo ? (
           <div className="dsdr-body">
             <div className="dsdr-files" role="listbox" aria-label={t('tab.workspace')}>
-              {stagedFiles.length > 0 ? (
+              {scope === 'all' ? (
                 <>
-                  <div className="dsdr-section">{t('review.sectionStaged')} ({stagedFiles.length})</div>
-                  <FileTreeView
-                    nodes={stagedTree}
-                    collapsed={collapsedDirs}
-                    onToggleDir={toggleDir}
-                    depth={0}
-                    renderLeaf={workspaceLeaf}
-                  />
+                  {stagedFiles.length > 0 ? (
+                    <>
+                      <div className="dsdr-section">{t('review.sectionStaged')} ({stagedFiles.length})</div>
+                      <FileTreeView
+                        nodes={stagedTree}
+                        collapsed={collapsedDirs}
+                        onToggleDir={toggleDir}
+                        depth={0}
+                        renderLeaf={workspaceLeaf}
+                      />
+                    </>
+                  ) : null}
+                  {unstagedFiles.length > 0 ? (
+                    <>
+                      <div className="dsdr-section">{t('review.sectionChanges')} ({unstagedFiles.length})</div>
+                      <FileTreeView
+                        nodes={unstagedTree}
+                        collapsed={collapsedDirs}
+                        onToggleDir={toggleDir}
+                        depth={0}
+                        renderLeaf={workspaceLeaf}
+                      />
+                    </>
+                  ) : null}
                 </>
               ) : null}
-              {unstagedFiles.length > 0 ? (
-                <>
-                  <div className="dsdr-section">{t('review.sectionChanges')} ({unstagedFiles.length})</div>
-                  <FileTreeView
-                    nodes={unstagedTree}
-                    collapsed={collapsedDirs}
-                    onToggleDir={toggleDir}
-                    depth={0}
-                    renderLeaf={workspaceLeaf}
-                  />
-                </>
+              {scope === 'unstaged' ? (
+                unstagedFiles.length > 0 ? (
+                  <>
+                    <div className="dsdr-section">{t('review.sectionChanges')} ({unstagedFiles.length})</div>
+                    <FileTreeView
+                      nodes={unstagedTree}
+                      collapsed={collapsedDirs}
+                      onToggleDir={toggleDir}
+                      depth={0}
+                      renderLeaf={workspaceLeaf}
+                    />
+                  </>
+                ) : (
+                  <div className="dsdr-empty">{t('review.empty')}</div>
+                )
               ) : null}
-              {history.length > 0 ? (
+              {scope === 'staged' ? (
+                stagedFiles.length > 0 ? (
+                  <>
+                    <div className="dsdr-section">{t('review.sectionStaged')} ({stagedFiles.length})</div>
+                    <FileTreeView
+                      nodes={stagedTree}
+                      collapsed={collapsedDirs}
+                      onToggleDir={toggleDir}
+                      depth={0}
+                      renderLeaf={workspaceLeaf}
+                    />
+                  </>
+                ) : (
+                  <div className="dsdr-empty">{t('review.empty')}</div>
+                )
+              ) : null}
+              {scope === 'branch' ? (
+                scopeFiles.length > 0 ? (
+                  <>
+                    <div className="dsdr-section">
+                      {t('scope.branch')} {baseBranch ? `↔ ${baseBranch}` : ''} ({scopeFiles.length})
+                    </div>
+                    <div className="dsdr-nodiff">{t('scope.branchReadonly')}</div>
+                    <FileTreeView
+                      nodes={scopeTree}
+                      collapsed={collapsedDirs}
+                      onToggleDir={toggleDir}
+                      depth={0}
+                      renderLeaf={workspaceLeaf}
+                    />
+                  </>
+                ) : (
+                  <div className="dsdr-empty">{t('review.empty')}</div>
+                )
+              ) : null}
+              {scope === 'last-turn' ? (
+                scopeFiles.length > 0 ? (
+                  <>
+                    <div className="dsdr-section">{t('scope.last-turn')} ({scopeFiles.length})</div>
+                    <FileTreeView
+                      nodes={scopeTree}
+                      collapsed={collapsedDirs}
+                      onToggleDir={toggleDir}
+                      depth={0}
+                      renderLeaf={workspaceLeaf}
+                    />
+                  </>
+                ) : (
+                  <div className="dsdr-empty">{t('review.noSessionChanges')}</div>
+                )
+              ) : null}
+              {(scope === 'all' || scope === 'commit') && history.length > 0 ? (
                 <>
                   <div className="dsdr-section">{t('review.history')}</div>
                   <div className="dsdr-timeline">
@@ -1735,7 +2831,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                   </div>
                 </>
               ) : null}
-              {selectedCommit && commitDiff?.ok && commitDiff.files.length > 0 ? (
+              {(scope === 'all' || scope === 'commit') && selectedCommit && commitDiff?.ok && commitDiff.files.length > 0 ? (
                 <>
                   <div className="dsdr-section">{t('review.commitFiles')} ({commitDiff.files.length})</div>
                   <FileTreeView
@@ -1761,27 +2857,60 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                   />
                 </>
               ) : null}
-              <div className="dsdr-section">{t('review.sectionBranch')}</div>
-              <div className="dsdr-branch">
-                <span className="dsdr-branch-ref" title={status.upstream ?? undefined}>
-                  {status.branch ?? t('review.detached')}
-                  <span className="dsdr-branch-arrow">→</span>
-                  {status.upstream ?? t('review.noUpstream')}
-                </span>
-                <span className="dsdr-branch-stat">
-                  {status.ahead > 0 ? <span className="dsdr-branch-ahead">{t('review.ahead', { n: status.ahead })}</span> : null}
-                  {status.behind > 0 ? <span className="dsdr-branch-behind">{t('review.behind', { n: status.behind })}</span> : null}
-                  {status.ahead === 0 && status.behind === 0 && status.upstream ? <span className="dsdr-branch-sync">✓</span> : null}
-                </span>
-                <button
-                  type="button"
-                  className={`dsdr-btn${confirm === 'push' ? ' dsdr-btn-confirm' : ''}`}
-                  disabled={busy || (status?.ahead ?? 0) === 0}
-                  onClick={onPush}
-                >
-                  {confirm === 'push' ? t('review.confirmPush') : `${t('review.push')}${(status?.ahead ?? 0) > 0 ? ` (${status?.ahead ?? 0})` : ''}`}
-                </button>
-              </div>
+              {scope === 'all' ? (
+                <>
+                  <div className="dsdr-section">{t('review.sectionBranch')}</div>
+                  <div className="dsdr-branch">
+                    <span className="dsdr-branch-ref" title={status.upstream ?? undefined}>
+                      {status.branch ?? t('review.detached')}
+                      <span className="dsdr-branch-arrow">→</span>
+                      {status.upstream ?? t('review.noUpstream')}
+                    </span>
+                    <span className="dsdr-branch-stat">
+                      {status.ahead > 0 ? <span className="dsdr-branch-ahead">{t('review.ahead', { n: status.ahead })}</span> : null}
+                      {status.behind > 0 ? <span className="dsdr-branch-behind">{t('review.behind', { n: status.behind })}</span> : null}
+                      {status.ahead === 0 && status.behind === 0 && status.upstream ? <span className="dsdr-branch-sync">✓</span> : null}
+                    </span>
+                    <button
+                      type="button"
+                      className={`dsdr-btn${confirm === 'push' ? ' dsdr-btn-confirm' : ''}`}
+                      disabled={busy || (status?.ahead ?? 0) === 0}
+                      onClick={onPush}
+                    >
+                      {confirm === 'push' ? t('review.confirmPush') : `${t('review.push')}${(status?.ahead ?? 0) > 0 ? ` (${status?.ahead ?? 0})` : ''}`}
+                    </button>
+                  </div>
+                  {pr?.pr ? (
+                    <>
+                      <div className="dsdr-section">
+                        {t('pr.title', { number: pr.pr.number })}
+                        {pr.comments.length > 0 ? ` · ${t('pr.comments', { n: pr.comments.length })}` : ''}
+                      </div>
+                      <div className="dsdr-pr">
+                        {pr.comments.length === 0 ? <div className="dsdr-nodiff">{t('pr.noPr')}</div> : null}
+                        {pr.comments.map((comment) => (
+                          <button
+                            key={comment.id}
+                            type="button"
+                            className="dsdr-pr-item"
+                            onClick={() => onPrCommentClick(comment.path, comment.line)}
+                          >
+                            <span className="dsdr-pr-meta">
+                              {comment.path ? `${baseName(comment.path)}${comment.line ? `:${comment.line}` : ''}` : 'general'} · {comment.author}
+                            </span>
+                            <span className="dsdr-pr-text">{comment.body}</span>
+                          </button>
+                        ))}
+                        {pr.comments.length > 0 ? (
+                          <button type="button" className="dsdr-btn" disabled={busy} onClick={() => openSendPanelWith(composePrMessage())}>
+                            {t('pr.sendComments')}
+                          </button>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : null}
+                </>
+              ) : null}
             </div>
             <div className="dsdr-diff">
               {selectedCommit ? (
@@ -1839,32 +2968,109 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                       {selectedFile.binary ? t('review.binary') : t('review.changes', { added: selectedFile.added, deleted: selectedFile.deleted })}
                     </span>
                     <DiffViewToggle view={view} onChange={setView} t={t} />
-                    <button type="button" className="dsdr-btn dsdr-btn-primary" disabled={busy} onClick={() => onFileAction('accept', selectedFile.path)}>
-                      {t('review.accept')}
+                    <button type="button" className="dsdr-btn" disabled={busy} onClick={() => void openFile(selectedFile.path)} title={t('editor.openFile')}>
+                      ↗ {t('editor.openFile')}
                     </button>
-                    <button
-                      type="button"
-                      className={`dsdr-btn dsdr-btn-danger${confirm === 'file' ? ' dsdr-btn-confirm' : ''}`}
-                      disabled={busy}
-                      onClick={() => onFileAction('revert', selectedFile.path)}
-                    >
-                      {confirm === 'file' ? t('review.confirmRevert') : t('review.revert')}
-                    </button>
+                    {allowActions && selectedFile.unstaged ? (
+                      <button type="button" className="dsdr-btn dsdr-btn-primary" disabled={busy} onClick={() => onFileAction('accept', selectedFile.path)}>
+                        {t('review.accept')}
+                      </button>
+                    ) : null}
+                    {allowActions && selectedFile.staged ? (
+                      <button type="button" className="dsdr-btn" disabled={busy} onClick={() => onFileAction('unstage', selectedFile.path)}>
+                        {t('review.unstage')}
+                      </button>
+                    ) : null}
+                    {allowActions ? (
+                      <button
+                        type="button"
+                        className={`dsdr-btn dsdr-btn-danger${confirm === 'file' ? ' dsdr-btn-confirm' : ''}`}
+                        disabled={busy}
+                        onClick={() => onFileAction('revert', selectedFile.path)}
+                      >
+                        {confirm === 'file' ? t('review.confirmRevert') : t('review.revert')}
+                      </button>
+                    ) : null}
                   </div>
                   {view === 'split' && !selectedFile.binary && gitSplitBlocks(selectedFile.diff).length > 0 ? (
-                    <SplitDiff blocks={gitSplitBlocks(selectedFile.diff)} beforeLabel={t('view.before')} afterLabel={t('view.after')} />
-                  ) : (
                     <div className="dsdr-diff-scroll">
-                      <pre className="dsdr-pre">
-                        {gitDiffRows(selectedFile.diff).map((row, i) => (
-                          <div key={i} className={`dsdr-line dsdr-line-${row.kind}`}>{row.text || ' '}</div>
+                      <div className="dsdr-split">
+                        <div className="dsdr-split-head">
+                          <div>
+                            <span className="dsdr-split-num" aria-hidden="true" />
+                            <span>{t('view.before')}</span>
+                          </div>
+                          <div>
+                            <span className="dsdr-split-num" aria-hidden="true" />
+                            <span>{t('view.after')}</span>
+                          </div>
+                        </div>
+                        {gitSplitBlocks(selectedFile.diff).map((block, bi) => (
+                          <Fragment key={bi}>
+                            {allowActions ? <HunkToolbar hunk={selectedFile.hunks[bi]} busy={busy} onAction={onHunkAction} t={t} /> : null}
+                            {block.head ? <div className="dsdr-split-hunk">{block.head}</div> : null}
+                            {block.rows.map((row, ri) => {
+                              const rowFindings = (review?.findings ?? []).filter(
+                                (f) =>
+                                  f.file === selectedFile.path &&
+                                  (row.rightNum !== null ? row.rightNum >= f.lineStart && row.rightNum <= f.lineEnd : row.leftNum !== null && row.leftNum >= f.lineStart && row.leftNum <= f.lineEnd),
+                              )
+                              const findingCls = rowFindings.length > 0 ? ` dsdr-cell-finding dsdr-finding-${rowFindings[0].priority}` : ''
+                              const jumped = jumpLine != null && (row.rightNum === jumpLine || (row.rightNum === null && row.leftNum === jumpLine))
+                              const openBtn = (line: number) =>
+                                selectedFile.path ? (
+                                  <button type="button" className="dsdr-split-openline" title={t('editor.openLine')} aria-label={t('editor.openLine')} onClick={() => void openFile(selectedFile.path, line)}>
+                                    ↗
+                                  </button>
+                                ) : null
+                              return (
+                                <div key={ri} className="dsdr-split-row">
+                                  <div className={`dsdr-split-cell ${row.leftNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-del' : ''}${findingCls}${jumped ? ' dsdr-cell-jump' : ''}`}>
+                                    <span className="dsdr-split-num">{row.leftNum ?? ''}</span>
+                                    <span className="dsdr-split-text">{row.left}</span>
+                                    {row.leftNum !== null ? openBtn(row.leftNum) : null}
+                                    {rowFindings.length > 0 && row.rightNum === null ? <span className={`dsdr-split-finding dsdr-finding-${rowFindings[0].priority}`}>{rowFindings[0].priority}</span> : null}
+                                  </div>
+                                  <div className={`dsdr-split-cell ${row.rightNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-add' : ''}${findingCls}${jumped ? ' dsdr-cell-jump' : ''}`}>
+                                    <span className="dsdr-split-num">{row.rightNum ?? ''}</span>
+                                    <span className="dsdr-split-text">{row.right}</span>
+                                    {row.rightNum !== null ? openBtn(row.rightNum) : null}
+                                    {rowFindings.length > 0 && row.rightNum !== null ? <span className={`dsdr-split-finding dsdr-finding-${rowFindings[0].priority}`}>{rowFindings[0].priority}</span> : null}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </Fragment>
                         ))}
-                      </pre>
+                      </div>
                     </div>
+                  ) : (
+                    <UnifiedDiff
+                      diff={selectedFile.diff}
+                      hunks={selectedFile.hunks}
+                      busy={busy}
+                      onHunkAction={onHunkAction}
+                      t={t}
+                      comments={comments}
+                      commentEditor={commentEditor}
+                      commentText={commentText}
+                      onCommentText={setCommentText}
+                      onOpenComment={openComment}
+                      onSaveComment={() => void saveComment()}
+                      onCancelComment={cancelComment}
+                      commentPopover={commentPopover}
+                      onTogglePopover={(key) => setCommentPopover((prev) => (prev === key ? null : key))}
+                      onDeleteComment={(id) => void deleteComment(id)}
+                      readOnly={!allowActions}
+                      path={selectedFile.path}
+                      reviewFindings={review?.findings}
+                      onOpenLine={(p, line) => void openFile(p, line)}
+                      jumpLine={jumpLine}
+                    />
                   )}
                 </>
               ) : (
-                <div className="dsdr-diff-empty">{t('review.empty')}</div>
+                <div className="dsdr-diff-empty">{scope === 'commit' ? t('review.selectCommit') : t('review.empty')}</div>
               )}
             </div>
           </div>
