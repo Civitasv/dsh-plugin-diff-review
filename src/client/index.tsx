@@ -57,10 +57,11 @@ const OPEN_EDITOR_URL = 'open-editor/open'
 const STYLE_TAG = 'dsh-plugin-diff-review/review.css'
 
 /** Open state shared between the header trigger (session scope) and the overlay (root scope). */
-const overlayStore = createSnapshotStore<{ open: boolean; cwd: string | null; key: number }>({
+const overlayStore = createSnapshotStore<{ open: boolean; cwd: string | null; key: number; focus?: { path: string; line?: number } | null }>({
   open: false,
   cwd: null,
   key: 0,
+  focus: null,
 })
 
 /**
@@ -870,7 +871,7 @@ const zh = {
   'editor.failed': '打开失败',
   'repo.label': '仓库',
   'review.dockComments': '行内评论 {n} 条',
-  'review.sent': '已发送 ✓',
+  'review.dockJump': '点击在评审面板中打开对应变更',
   'settings.title': '变动',
   'settings.font': '字体',
   'settings.size': '字号',
@@ -993,7 +994,7 @@ const en: Record<keyof typeof zh, string> = {
   'editor.failed': 'Failed to open',
   'repo.label': 'Repo',
   'review.dockComments': '{n} inline comments',
-  'review.sent': 'Sent ✓',
+  'review.dockJump': 'Open the matching change in the review panel',
   'settings.title': 'Changes',
   'settings.font': 'Font',
   'settings.size': 'Font size',
@@ -1310,7 +1311,10 @@ function UnifiedDiff({
                     const jumped = jumpLine != null && (newLine === jumpLine || (newLine === null && oldLine === jumpLine))
                     return (
                       <Fragment key={ri}>
-                        <div className={`dsdr-line dsdr-line-${row.kind}${rowComments.length > 0 ? ' dsdr-line-commented' : ''}${findingCls}${jumped ? ' dsdr-line-jump' : ''}`}>
+                        <div
+                          className={`dsdr-line dsdr-line-${row.kind}${rowComments.length > 0 ? ' dsdr-line-commented' : ''}${findingCls}${jumped ? ' dsdr-line-jump' : ''}`}
+                          data-dsdr-line={newLine ?? oldLine ?? undefined}
+                        >
                           <span className="dsdr-line-num">{newLine ?? oldLine ?? ''}</span>
                           <span className="dsdr-line-text">{row.text || ' '}</span>
                           {showActions ? (
@@ -1756,14 +1760,13 @@ function FileTreeView<T>(props: {
 
 type DiffReviewComposerDockProps = PropsRuntime<'conversation.input.dock'> & PropsLocale<'diff-review'> & { sessions: ISessions }
 
-function DiffReviewComposerDock({ sessionId, useSessions, sessions, t }: DiffReviewComposerDockProps) {
+function DiffReviewComposerDock({ sessionId, useSessions, sessions, input, t }: DiffReviewComposerDockProps) {
   const cwd = useSessions((s: SessionListState) => s.byId[sessionId]?.cwd)
   const pending = useSyncExternalStore(pendingCommentsStore.subscribe, pendingCommentsStore.getSnapshot)
   const [hover, setHover] = useState(false)
-  const [sending, setSending] = useState(false)
   const [dismissed, setDismissed] = useState(false)
-  const [sentFlash, setSentFlash] = useState(false)
-  const sentIds = useRef<string | null>(null)
+  const carriedIds = useRef<string | null>(null)
+  const carrying = useRef(false)
 
   // Seed the store from server storage when nothing has been synced for this
   // workspace yet (panel never opened this session — comments persist in .git).
@@ -1786,55 +1789,66 @@ function DiffReviewComposerDock({ sessionId, useSessions, sessions, t }: DiffRev
 
   const comments = pending.cwd === cwd ? pending.comments : []
   const ids = comments.map((c) => c.id).join(',')
-  const alreadySent = sentIds.current === ids
   useEffect(() => {
     if (comments.length === 0) {
       setDismissed(false)
-      setSentFlash(false)
-      sentIds.current = null
+      carriedIds.current = null
     }
   }, [comments.length])
 
-  if (!cwd || comments.length === 0 || dismissed || alreadySent) return null
-
-  const send = async () => {
-    setSending(true)
+  // Codex-style auto-carry: when the user submits a message while comments are
+  // pending, queue the comments right behind it (no send button needed).
+  const phase = input?.phase
+  useEffect(() => {
+    if (comments.length === 0 || carrying.current || carriedIds.current === ids) return
+    if (phase !== 'submitting' && phase !== 'adjudicating') return
+    carrying.current = true
+    const targetIds = ids
     const lines: string[] = ['请处理以下针对当前工作区的行内评审评论（Address the inline comments，保持改动范围最小）：', '']
     for (const c of comments) {
       const anchor = c.lineNew !== null ? `:${c.lineNew}` : ` (old line ${c.lineOld})`
       lines.push(`- ${c.path}${anchor}: ${c.text}`)
     }
-    const outcome = await injectToSession(sessions, sessionId, lines.join('\n'))
-    setSending(false)
-    if (outcome === 'sent') {
-      sentIds.current = comments.map((c) => c.id).join(',')
-      setSentFlash(true)
-      setTimeout(() => setSentFlash(false), 2000)
-    } else if (outcome === 'copied') {
-      sentIds.current = comments.map((c) => c.id).join(',')
-      setSentFlash(true)
-      setTimeout(() => setSentFlash(false), 2000)
-    }
+    void injectToSession(sessions, sessionId, lines.join('\n')).then((outcome) => {
+      if (outcome !== 'failed') carriedIds.current = targetIds
+      carrying.current = false
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, ids])
+
+  if (!cwd || comments.length === 0 || dismissed) return null
+
+  /** Open the review panel at the comment's change block. */
+  const focusComment = (comment: ReviewComment) => {
+    overlayStore.update((d) => {
+      d.open = true
+      d.cwd = cwd
+      d.focus = { path: comment.path, line: comment.lineNew ?? comment.lineOld ?? undefined }
+      d.key = d.key + 1
+    })
   }
 
   return (
     <div className="dsdr-dock">
-      <div className="dsdr-dock-pill" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} role="button" tabIndex={0} aria-label={t('review.dockComments', { n: comments.length })}>
+      <div className="dsdr-dock-pill" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
         💬 {t('review.dockComments', { n: comments.length })}
         {hover ? (
           <div className="dsdr-dock-pop">
             {comments.map((comment) => (
-              <div key={comment.id} className="dsdr-dock-item">
+              <button
+                key={comment.id}
+                type="button"
+                className="dsdr-dock-item"
+                title={t('review.dockJump')}
+                onClick={() => focusComment(comment)}
+              >
                 <span className="dsdr-dock-loc">{comment.path}{comment.lineNew !== null ? `:${comment.lineNew}` : ''}</span>
                 <span className="dsdr-dock-text">{comment.text}</span>
-              </div>
+              </button>
             ))}
           </div>
         ) : null}
       </div>
-      <button type="button" className="dsdr-btn dsdr-btn-primary dsdr-dock-send" disabled={sending} onClick={() => void send()}>
-        {sentFlash ? t('review.sent') : sending ? t('review.busy') : t('review.sendToAgent')}
-      </button>
       <button type="button" className="dsdr-btn dsdr-dock-close" aria-label={t('comment.cancel')} onClick={() => setDismissed(true)}>
         ✕
       </button>
@@ -2024,6 +2038,34 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     void loadWorkspace()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, activeCwd])
+
+  // Surface workspace comments above the composer (Codex-style dock).
+  useEffect(() => {
+    pendingCommentsStore.update((d) => {
+      d.cwd = activeCwd ?? null
+      d.comments = comments
+    })
+  }, [comments, activeCwd])
+
+  // Jump to a change block from the composer dock (comment click).
+  useEffect(() => {
+    const focus = storeState.focus
+    if (!storeState.open || !cwd || !focus) return
+    setTab('workspace')
+    setSelected(focus.path)
+    setJumpLine(focus.line ?? null)
+    const scrollTimer = setTimeout(() => {
+      if (focus.line != null) {
+        document.querySelector(`[data-dsdr-line="${focus.line}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      }
+    }, 80)
+    const clearTimer = setTimeout(() => setJumpLine(null), 2500)
+    return () => {
+      clearTimeout(scrollTimer)
+      clearTimeout(clearTimer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeState.key])
 
   // Keep staged/unstaged/history fresh while the workspace tab is open.
   useEffect(() => {
@@ -2390,14 +2432,6 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     if (path) jumpTo(path, line ?? undefined)
     else setJumpLine(null)
   }
-
-  // Surface workspace comments above the composer (Codex-style dock).
-  useEffect(() => {
-    pendingCommentsStore.update((d) => {
-      d.cwd = activeCwd ?? null
-      d.comments = comments
-    })
-  }, [comments, activeCwd])
 
   // ---- feedback loop: comments → agent (prompt injection, copy fallback) ----
   const composeReviewMessage = (): string => {
@@ -3188,14 +3222,20 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                               return (
                                 <Fragment key={ri}>
                                   <div className="dsdr-split-row">
-                                    <div className={`dsdr-split-cell ${row.leftNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-del' : ''}${findingCls}${jumped ? ' dsdr-cell-jump' : ''}`}>
+                                    <div
+                                      className={`dsdr-split-cell ${row.leftNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-del' : ''}${findingCls}${jumped ? ' dsdr-cell-jump' : ''}`}
+                                      data-dsdr-line={row.leftNum ?? undefined}
+                                    >
                                       <span className="dsdr-split-num">{row.leftNum ?? ''}</span>
                                       <span className="dsdr-split-text">{row.left}</span>
                                       {row.leftNum !== null ? openBtn(row.leftNum) : null}
                                       {rowFindings.length > 0 && row.rightNum === null ? <span className={`dsdr-split-finding dsdr-finding-${rowFindings[0].priority}`}>{rowFindings[0].priority}</span> : null}
                                       {commentBtn(leftAnchor, leftComments.length)}
                                     </div>
-                                    <div className={`dsdr-split-cell ${row.rightNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-add' : ''}${findingCls}${jumped ? ' dsdr-cell-jump' : ''}`}>
+                                    <div
+                                      className={`dsdr-split-cell ${row.rightNum === null ? 'dsdr-cell-dim' : row.kind === 'change' ? 'dsdr-cell-add' : ''}${findingCls}${jumped ? ' dsdr-cell-jump' : ''}`}
+                                      data-dsdr-line={row.rightNum ?? undefined}
+                                    >
                                       <span className="dsdr-split-num">{row.rightNum ?? ''}</span>
                                       <span className="dsdr-split-text">{row.right}</span>
                                       {row.rightNum !== null ? openBtn(row.rightNum) : null}
