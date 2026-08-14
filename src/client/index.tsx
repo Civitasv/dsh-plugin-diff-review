@@ -18,6 +18,7 @@
  * overlay registration's inject face).
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import type { CSSProperties } from 'react'
 import { diffLines } from 'diff'
 import type { ClientContext, ISessions, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -25,9 +26,10 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import type { ConversationNode, ToolResultNode, UserMessageNode } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ToolResultView } from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only imports pulling the header-action slot contract, the shell.overlay
-// contract and the standard kit into this program.
+// contract, the settings.general.item slot contract and the standard kit.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { ApplyResponse, DiffFile, StatusResponse } from '../shared/types.ts'
 
@@ -47,6 +49,55 @@ const overlayStore = createSnapshotStore<{ open: boolean; cwd: string | null; ke
   cwd: null,
   key: 0,
 })
+
+// ---------------------------------------------------------------------------
+// Review preferences (font / size / panel geometry), shared by the overlay
+// and the Settings → General row. Persisted to localStorage by the store.
+// ---------------------------------------------------------------------------
+
+/** Panel geometry bounds. */
+export const MIN_PANEL_W = 640
+export const MIN_PANEL_H = 400
+
+interface Prefs {
+  /** Font option id (see FONT_OPTIONS). */
+  font: string
+  /** Diff text size in px. */
+  size: number
+  /** Panel width in px. */
+  width: number
+  /** Panel height in px. */
+  height: number
+}
+
+const FONT_OPTIONS: { id: string; label: string; css: string }[] = [
+  { id: 'mono', label: 'font.mono', css: 'var(--dsw-font-mono)' },
+  { id: 'system', label: 'font.system', css: 'system-ui, -apple-system, sans-serif' },
+  { id: 'consolas', label: 'Consolas', css: 'Consolas, "Courier New", monospace' },
+  { id: 'jetbrains', label: 'JetBrains Mono', css: '"JetBrains Mono", Consolas, monospace' },
+  { id: 'fira', label: 'Fira Code', css: '"Fira Code", Consolas, monospace' },
+  { id: 'source', label: 'Source Code Pro', css: '"Source Code Pro", Consolas, monospace' },
+]
+
+const SIZE_OPTIONS = [11, 12, 13, 14, 16, 18]
+
+const prefsStore = createSnapshotStore<Prefs>(
+  { font: 'mono', size: 12, width: 1120, height: 720 },
+  { persist: { name: 'dsdr-prefs' } },
+)
+
+/** CSS font-family for a stored font option id. */
+function fontCss(id: string): string {
+  return FONT_OPTIONS.find((f) => f.id === id)?.css ?? FONT_OPTIONS[0].css
+}
+
+/** Panel CSS variables carrying the font/size preference. */
+function diffStyleVars(prefs: Prefs): CSSProperties {
+  return {
+    '--dsdr-diff-font': fontCss(prefs.font),
+    '--dsdr-diff-size': `${prefs.size}px`,
+  } as CSSProperties
+}
 
 // ---------------------------------------------------------------------------
 // Session-changes extraction (client-side, works without git).
@@ -386,7 +437,11 @@ const REVIEW_CSS = `
 .dsdr-label{margin-left:2px}
 .dsdr-count{background:var(--dsw-alias-fill-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;min-width:16px;text-align:center;font-size:11px;line-height:16px;padding:0 5px;font-variant-numeric:tabular-nums}
 .dsdr-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:32px}
-.dsdr-panel{box-sizing:border-box;width:min(1120px,100%);height:min(720px,calc(100vh - 64px));background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;box-shadow:var(--dsw-shadow-lv3);display:flex;flex-direction:column;overflow:hidden}
+.dsdr-panel{box-sizing:border-box;position:relative;width:min(1120px,100%);height:min(720px,calc(100vh - 64px));max-width:calc(100vw - 64px);max-height:calc(100vh - 64px);background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;box-shadow:var(--dsw-shadow-lv3);display:flex;flex-direction:column;overflow:hidden}
+.dsdr-resize{position:absolute;z-index:5}
+.dsdr-resize-e{top:0;right:-3px;width:7px;height:100%;cursor:ew-resize}
+.dsdr-resize-s{bottom:-3px;left:0;width:100%;height:7px;cursor:ns-resize}
+.dsdr-resize-se{right:-4px;bottom:-4px;width:15px;height:15px;cursor:nwse-resize}
 .dsdr-header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
 .dsdr-title{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary)}
 .dsdr-subtitle{color:var(--dsw-alias-label-tertiary);font-size:12px;font-family:var(--dsw-font-mono)}
@@ -425,7 +480,7 @@ const REVIEW_CSS = `
 .dsdr-diff-path{font-family:var(--dsw-font-mono);font-size:13px;color:var(--dsw-alias-label-primary);flex:1;min-width:0;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
 .dsdr-diff-stats{font-size:11px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;flex:none}
 .dsdr-diff-scroll{flex:1;min-height:0;overflow:auto;display:flex}
-.dsdr-pre{margin:0;padding:8px 0;font-family:var(--dsw-font-mono);font-size:12px;line-height:18px;white-space:pre;min-width:100%;flex:1}
+.dsdr-pre{margin:0;padding:8px 0;font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:var(--dsdr-diff-size, 12px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px);white-space:pre;min-width:100%;flex:1}
 .dsdr-line{display:flex;padding:0 16px;color:var(--dsw-alias-label-primary)}
 .dsdr-line-add{background:rgba(46,160,67,.13)}
 .dsdr-line-del{background:rgba(248,81,73,.12)}
@@ -440,6 +495,12 @@ const REVIEW_CSS = `
 @keyframes dsdr-spin{to{transform:rotate(360deg)}}
 .dsdr-empty{padding:40px;text-align:center;color:var(--dsw-alias-label-tertiary);font-size:13px}
 .dsdr-nodiff{padding:8px 16px;color:var(--dsw-alias-label-tertiary);font-size:12px}
+.dsdr-set-row{border-bottom:1px solid var(--dsw-alias-border-l2);display:flex;flex-direction:column;gap:10px;padding:16px 0}
+.dsdr-set-title{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:400;line-height:22px}
+.dsdr-set-grid{display:flex;flex-wrap:wrap;gap:12px}
+.dsdr-set-field{display:flex;flex-direction:column;gap:4px;color:var(--dsw-alias-label-tertiary);font-size:12px}
+.dsdr-set-field select{box-sizing:border-box;min-height:28px;background:var(--dsw-alias-fill-l2);border:1px solid var(--dsw-alias-border-l2);border-radius:7px;color:var(--dsw-alias-label-primary);padding:2px 8px;font:inherit;font-size:12px;line-height:18px}
+.dsdr-set-field select:focus-visible{outline:1px solid var(--dsw-static-neutral-bluish-400)}
 .dsdr-view-toggle{display:flex;gap:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;padding:2px;flex:none}
 .dsdr-view-btn{box-sizing:border-box;min-height:22px;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:1px 8px;font:inherit;font-size:11px;line-height:16px}
 .dsdr-view-btn:hover{color:var(--dsw-alias-label-secondary)}
@@ -447,10 +508,10 @@ const REVIEW_CSS = `
 .dsdr-split{min-width:100%}
 .dsdr-split-head{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:11px;line-height:18px;color:var(--dsw-alias-label-tertiary);padding:4px 8px;position:sticky;top:0;background:var(--dsw-alias-bg-module-platform)}
 .dsdr-split-head div{display:flex;gap:8px}
-.dsdr-split-hunk{color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-fill-l2);font-family:var(--dsw-font-mono);font-size:11px;line-height:18px;padding:2px 16px}
-.dsdr-split-row{display:grid;grid-template-columns:1fr 1fr;font-family:var(--dsw-font-mono);font-size:12px;line-height:18px}
+.dsdr-split-hunk{color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-fill-l2);font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:11px;line-height:18px;padding:2px 16px}
+.dsdr-split-row{display:grid;grid-template-columns:1fr 1fr;font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:var(--dsdr-diff-size, 12px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px)}
 .dsdr-split-cell{display:flex;gap:8px;padding:0 8px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
-.dsdr-split-num{flex:none;width:36px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:11px;line-height:18px}
+.dsdr-split-num{flex:none;width:36px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px)}
 .dsdr-split-text{flex:1;min-width:0}
 .dsdr-cell-add{background:rgba(46,160,67,.13)}
 .dsdr-cell-del{background:rgba(248,81,73,.12)}
@@ -501,6 +562,11 @@ const zh = {
   'view.split': '双栏',
   'view.before': '原文件',
   'view.after': '新文件',
+  'settings.title': 'Diff 审查',
+  'settings.font': '字体',
+  'settings.size': '字号',
+  'font.mono': '等宽（默认）',
+  'font.system': '系统字体',
 } as const
 
 /** English dictionary, checked complete against the zh key set. */
@@ -540,6 +606,11 @@ const en: Record<keyof typeof zh, string> = {
   'view.split': 'Split',
   'view.before': 'Before',
   'view.after': 'After',
+  'settings.title': 'Diff Review',
+  'settings.font': 'Font',
+  'settings.size': 'Font size',
+  'font.mono': 'Monospace (default)',
+  'font.system': 'System font',
 }
 
 type DiffReviewActionProps = PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'diff-review'>
@@ -640,6 +711,36 @@ function SplitDiff({ blocks, beforeLabel, afterLabel }: { blocks: SplitBlock[]; 
 }
 
 /** Status chip color class for a workspace change. */
+/** Drag handle for resizing the panel (east / south / south-east). */
+function ResizeHandle({ mode, onResize }: { mode: 'e' | 's' | 'se'; onResize: (dx: number, dy: number) => void }) {
+  const last = useRef<{ x: number; y: number } | null>(null)
+  return (
+    <div
+      className={`dsdr-resize dsdr-resize-${mode}`}
+      aria-hidden="true"
+      onPointerDown={(event) => {
+        last.current = { x: event.clientX, y: event.clientY }
+        event.currentTarget.setPointerCapture(event.pointerId)
+      }}
+      onPointerMove={(event) => {
+        if (!last.current) return
+        const dx = event.clientX - last.current.x
+        const dy = event.clientY - last.current.y
+        last.current = { x: event.clientX, y: event.clientY }
+        if (dx !== 0 || dy !== 0) onResize(dx, dy)
+      }}
+      onPointerUp={(event) => {
+        last.current = null
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }}
+      onPointerCancel={() => {
+        last.current = null
+      }}
+    />
+  )
+}
+
+/** Status chip color class for a workspace change. */
 function chipClass(status: string): string {
   const s = status.replace(/\s/g, '')
   if (s.includes('??')) return 'dsdr-chip-u'
@@ -662,6 +763,52 @@ async function applyChanges(cwd: string, action: 'accept' | 'revert', path?: str
     body: JSON.stringify({ cwd, action, path }),
   })
   return (await res.json().catch(() => ({ ok: false, error: 'invalid response' }))) as ApplyResponse
+}
+
+/** Settings → General preference row: diff font + font size (shared prefs store). */
+function DiffReviewSettingsRow({ t }: { t: (key: keyof typeof zh, params?: Record<string, unknown>) => string }) {
+  const prefs = useSyncExternalStore(prefsStore.subscribe, prefsStore.getSnapshot)
+  return (
+    <div className="dsdr-set-row">
+      <div className="dsdr-set-title">{t('settings.title')}</div>
+      <div className="dsdr-set-grid">
+        <label className="dsdr-set-field">
+          <span>{t('settings.font')}</span>
+          <select
+            value={prefs.font}
+            onChange={(event) =>
+              prefsStore.update((d) => {
+                d.font = event.target.value
+              })
+            }
+          >
+            {FONT_OPTIONS.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.label.startsWith('font.') ? t(f.label as keyof typeof zh) : f.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="dsdr-set-field">
+          <span>{t('settings.size')}</span>
+          <select
+            value={String(prefs.size)}
+            onChange={(event) =>
+              prefsStore.update((d) => {
+                d.size = Number(event.target.value)
+              })
+            }
+          >
+            {SIZE_OPTIONS.map((s) => (
+              <option key={s} value={String(s)}>
+                {s}px
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -708,6 +855,7 @@ function DiffReviewAction({ sessionId, useSessions, useSession, t }: DiffReviewA
 
 function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const storeState = useSyncExternalStore(overlayStore.subscribe, overlayStore.getSnapshot)
+  const prefs = useSyncExternalStore(prefsStore.subscribe, prefsStore.getSnapshot)
   const [tab, setTab] = useState<'session' | 'workspace'>('session')
   const [view, setView] = useState<ViewMode>(() => {
     try {
@@ -881,7 +1029,38 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
         if (event.target === event.currentTarget) close()
       }}
     >
-      <div className="dsdr-panel" role="dialog" aria-modal="true" aria-label={t('review.title')}>
+      <div
+        className="dsdr-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('review.title')}
+        style={{ width: `${prefs.width}px`, height: `${prefs.height}px`, ...diffStyleVars(prefs) } as CSSProperties}
+      >
+        <ResizeHandle
+          mode="e"
+          onResize={(dx) =>
+            prefsStore.update((d) => {
+              d.width = Math.max(MIN_PANEL_W, Math.min(window.innerWidth - 64, d.width + dx))
+            })
+          }
+        />
+        <ResizeHandle
+          mode="s"
+          onResize={(_dx, dy) =>
+            prefsStore.update((d) => {
+              d.height = Math.max(MIN_PANEL_H, Math.min(window.innerHeight - 64, d.height + dy))
+            })
+          }
+        />
+        <ResizeHandle
+          mode="se"
+          onResize={(dx, dy) =>
+            prefsStore.update((d) => {
+              d.width = Math.max(MIN_PANEL_W, Math.min(window.innerWidth - 64, d.width + dx))
+              d.height = Math.max(MIN_PANEL_H, Math.min(window.innerHeight - 64, d.height + dy))
+            })
+          }
+        />
         <div className="dsdr-header">
           <span className="dsdr-title">{t('review.title')}</span>
           <span className="dsdr-tabs" role="tablist" aria-label={t('review.title')}>
@@ -1115,6 +1294,17 @@ export function apply(ctx: ClientContext): void {
         inject: () => ({ sessions: ctx.sessions }),
       },
       DiffReviewOverlay,
+    ),
+  )
+  ctx.slots.inject('settings.general.item', () =>
+    ctx.slots.register(
+      {
+        name: 'settings.general.item',
+        id: 'diff-review-preferences',
+        order: 30,
+        locale: LOCALE_NS,
+      },
+      DiffReviewSettingsRow,
     ),
   )
 }
