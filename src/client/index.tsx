@@ -1028,8 +1028,8 @@ function ThemeSelect({
   )
 }
 
-/** Settings → General preference row: diff font + font size (shared prefs store). */
-function DiffReviewSettingsRow({ t }: { t: (key: keyof typeof zh, params?: Record<string, unknown>) => string }) {
+/** Diff font + font size controls (shared prefs store). */
+function DiffReviewPrefs({ t }: { t: (key: keyof typeof zh, params?: Record<string, unknown>) => string }) {
   const prefs = useSyncExternalStore(prefsStore.subscribe, prefsStore.getSnapshot)
   return (
     <div className="dsdr-set-row">
@@ -1957,6 +1957,7 @@ function DiffReviewConfigCard({ t }: { t: (key: keyof typeof zh, params?: Record
       </button>
       {open ? (
         <div className="dsdr-cfg-body">
+          <DiffReviewPrefs t={t} />
           <label className="dsdr-cfg-field">
             <span className="dsdr-cfg-label">{t('config.allowedRoots')}</span>
             <textarea
@@ -2010,20 +2011,8 @@ export function apply(ctx: ClientContext): void {
     ),
   )
   // The plugin's own settings tab inside 设置 → 插件 (not the General section).
-  ctx.slots.inject('settings.plugins.tab', () =>
-    ctx.slots.register(
-      {
-        name: 'settings.plugins.tab',
-        id: 'diff-review',
-        order: 20,
-        label: () => ctx.locale.bind(LOCALE_NS)('settings.title'),
-        locale: LOCALE_NS,
-      },
-      DiffReviewSettingsRow,
-    ),
-  )
-
-  // The config card inside 设置 → 插件 → 插件配置 (settings.plugin.item).
+  // The plugin's whole configuration lives in one card inside
+  // 设置 → 插件 → 插件配置 (settings.plugin.item): font/size + allowedRoots.
   ctx.slots.inject('settings.plugin.item', () =>
     ctx.slots.register(
       {
