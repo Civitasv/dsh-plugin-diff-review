@@ -499,8 +499,19 @@ const REVIEW_CSS = `
 .dsdr-set-title{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:400;line-height:22px}
 .dsdr-set-grid{display:flex;flex-wrap:wrap;gap:12px}
 .dsdr-set-field{display:flex;flex-direction:column;gap:4px;color:var(--dsw-alias-label-tertiary);font-size:12px}
-.dsdr-set-field select{box-sizing:border-box;min-height:28px;background:var(--dsw-alias-fill-l2);border:1px solid var(--dsw-alias-border-l2);border-radius:7px;color:var(--dsw-alias-label-primary);padding:2px 8px;font:inherit;font-size:12px;line-height:18px}
-.dsdr-set-field select:focus-visible{outline:1px solid var(--dsw-static-neutral-bluish-400)}
+.dsdr-sel{position:relative;display:inline-flex}
+.dsdr-sel-trigger{box-sizing:border-box;min-width:180px;min-height:28px;background:var(--dsw-alias-fill-l2);border:1px solid var(--dsw-alias-border-l2);border-radius:7px;color:var(--dsw-alias-label-primary);cursor:pointer;padding:2px 8px;font:inherit;font-size:12px;line-height:18px;display:inline-flex;align-items:center;gap:8px}
+.dsdr-sel-trigger:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsdr-sel-trigger:focus-visible{outline:1px solid var(--dsw-static-neutral-bluish-400)}
+.dsdr-sel-trigger svg{flex:none;transition:transform .12s}
+.dsdr-sel-trigger[aria-expanded="true"] svg{transform:rotate(180deg)}
+.dsdr-sel-value{flex:1;min-width:0;text-align:left;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.dsdr-sel-menu{z-index:200;box-sizing:border-box;min-width:100%;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3);border-radius:10px;margin:0;padding:4px;list-style:none;display:flex;flex-direction:column;gap:1px;position:absolute;top:calc(100% + 5px);left:0}
+.dsdr-sel-option{box-sizing:border-box;width:100%;min-height:30px;color:var(--dsw-alias-label-primary);border-radius:7px;align-items:center;gap:8px;padding:5px 8px;font:inherit;font-size:12px;line-height:18px;cursor:pointer;background:0 0;border:0;text-align:left;display:flex}
+.dsdr-sel-option:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsdr-sel-option-active{color:var(--dsw-alias-label-primary)}
+.dsdr-sel-option-mark{flex:none;width:14px;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary)}
+.dsdr-sel-option-label{flex:1;min-width:0;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
 .dsdr-view-toggle{display:flex;gap:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;padding:2px;flex:none}
 .dsdr-view-btn{box-sizing:border-box;min-height:22px;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:1px 8px;font:inherit;font-size:11px;line-height:16px}
 .dsdr-view-btn:hover{color:var(--dsw-alias-label-secondary)}
@@ -646,6 +657,22 @@ function IconRefresh() {
   )
 }
 
+function IconChevronDown() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  )
+}
+
+function IconCheck() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}
+
 type ViewMode = 'single' | 'split'
 
 /** 单栏 / 双栏 segmented toggle (persisted across opens). */
@@ -765,6 +792,76 @@ async function applyChanges(cwd: string, action: 'accept' | 'revert', path?: str
   return (await res.json().catch(() => ({ ok: false, error: 'invalid response' }))) as ApplyResponse
 }
 
+/** Theme-aware dropdown replacing native <select> (native popups ignore the theme). */
+function ThemeSelect({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  value: string
+  options: { value: string; label: string }[]
+  onChange: (value: string) => void
+  ariaLabel?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const current = options.find((o) => o.value === value)
+
+  useEffect(() => {
+    if (!open) return
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) setOpen(false)
+    }
+    const closeOnKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeOnKey)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside)
+      document.removeEventListener('keydown', closeOnKey)
+    }
+  }, [open])
+
+  return (
+    <div className="dsdr-sel" ref={rootRef}>
+      <button
+        type="button"
+        className="dsdr-sel-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="dsdr-sel-value">{current?.label ?? value}</span>
+        <IconChevronDown />
+      </button>
+      {open ? (
+        <ul className="dsdr-sel-menu" role="listbox" aria-label={ariaLabel}>
+          {options.map((option) => (
+            <li key={option.value} role="none">
+              <button
+                type="button"
+                role="option"
+                aria-selected={option.value === value}
+                className={`dsdr-sel-option${option.value === value ? ' dsdr-sel-option-active' : ''}`}
+                onClick={() => {
+                  onChange(option.value)
+                  setOpen(false)
+                }}
+              >
+                <span className="dsdr-sel-option-mark">{option.value === value ? <IconCheck /> : null}</span>
+                <span className="dsdr-sel-option-label">{option.label}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
 /** Settings → General preference row: diff font + font size (shared prefs store). */
 function DiffReviewSettingsRow({ t }: { t: (key: keyof typeof zh, params?: Record<string, unknown>) => string }) {
   const prefs = useSyncExternalStore(prefsStore.subscribe, prefsStore.getSnapshot)
@@ -774,37 +871,29 @@ function DiffReviewSettingsRow({ t }: { t: (key: keyof typeof zh, params?: Recor
       <div className="dsdr-set-grid">
         <label className="dsdr-set-field">
           <span>{t('settings.font')}</span>
-          <select
+          <ThemeSelect
+            ariaLabel={t('settings.font')}
             value={prefs.font}
-            onChange={(event) =>
+            options={FONT_OPTIONS.map((f) => ({ value: f.id, label: f.label.startsWith('font.') ? t(f.label as keyof typeof zh) : f.label }))}
+            onChange={(font) =>
               prefsStore.update((d) => {
-                d.font = event.target.value
+                d.font = font
               })
             }
-          >
-            {FONT_OPTIONS.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.label.startsWith('font.') ? t(f.label as keyof typeof zh) : f.label}
-              </option>
-            ))}
-          </select>
+          />
         </label>
         <label className="dsdr-set-field">
           <span>{t('settings.size')}</span>
-          <select
+          <ThemeSelect
+            ariaLabel={t('settings.size')}
             value={String(prefs.size)}
-            onChange={(event) =>
+            options={SIZE_OPTIONS.map((s) => ({ value: String(s), label: `${s}px` }))}
+            onChange={(size) =>
               prefsStore.update((d) => {
-                d.size = Number(event.target.value)
+                d.size = Number(size)
               })
             }
-          >
-            {SIZE_OPTIONS.map((s) => (
-              <option key={s} value={String(s)}>
-                {s}px
-              </option>
-            ))}
-          </select>
+          />
         </label>
       </div>
     </div>
