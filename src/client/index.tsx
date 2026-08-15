@@ -3544,6 +3544,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               ) : null}
             </span>
           ) : null}
+          {surface === 'review' ? <DiffViewToggle view={view} onChange={setView} t={t} /> : null}
           <span className="dsdr-subtitle">
             {tab === 'session'
               ? t('review.sessionStats', { rounds: rounds.length, files: totalSessionFiles })
@@ -3661,7 +3662,6 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                     <div className="dsdr-diff-head">
                       <span className="dsdr-diff-path" title={selectedChange.path}>{selectedChange.path}</span>
                       <span className="dsdr-tool">{selectedChange.tool}</span>
-                      {selectedChange.hasDiff ? <DiffViewToggle view={view} onChange={setView} t={t} /> : null}
                       <button type="button" className="dsdr-btn" disabled={busy} onClick={() => void openFile(selectedChange.path)} title={t('editor.openFile')}>
                         ↗ {t('editor.openFile')}
                       </button>
@@ -4042,7 +4042,6 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                       <span className="dsdr-diff-stats">
                         {t('review.changes', { added: commitDiff.added, deleted: commitDiff.deleted })}
                       </span>
-                      <DiffViewToggle view={view} onChange={setView} t={t} />
                     </div>
                     {commitActiveFile ? (
                       <div className="dsdr-commit-file-head">
@@ -4080,7 +4079,6 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                     <span className="dsdr-diff-stats">
                       {selectedFile.binary ? t('review.binary') : t('review.changes', { added: selectedFile.added, deleted: selectedFile.deleted })}
                     </span>
-                    <DiffViewToggle view={view} onChange={setView} t={t} />
                     <button type="button" className="dsdr-btn" disabled={busy} onClick={() => void openFile(selectedFile.path)} title={t('editor.openFile')}>
                       ↗ {t('editor.openFile')}
                     </button>
