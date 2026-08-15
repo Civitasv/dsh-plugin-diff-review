@@ -183,6 +183,16 @@ function formatBytes(n: number): string {
 }
 
 /**
+ * Shorten a path for display: keep the tail and ellipsize the head.
+ * The result is at most `max` chars (for max >= 1; max <= 1 degrades to '…').
+ */
+function shortenPath(path: string, max = 60): string {
+  if (max <= 1) return '…'
+  if (path.length <= max) return path
+  return `…${path.slice(-(max - 1))}`
+}
+
+/**
  * Split unified diff text into hunks (each starting at an `@@` header).
  * Trailing empty elements from the final newline are dropped so hunk text is
  * comparable between the server and the client.
@@ -290,6 +300,13 @@ async function collectDiff(cwd: string, change: Change): Promise<DiffFile> {
   const unstaged = untracked ? true : change.xy[1] !== ' ' && change.xy[1] !== '?'
   const status = untracked ? '??' : change.xy.trim()
 
+  let mtime = 0
+  try {
+    mtime = statSync(resolve(cwd, change.path)).mtimeMs
+  } catch {
+    // deleted / unreadable — mtime stays 0
+  }
+
   return {
     path: change.path,
     origPath: change.origPath,
@@ -303,6 +320,7 @@ async function collectDiff(cwd: string, change: Change): Promise<DiffFile> {
     diff,
     binary,
     hunks,
+    mtime,
   }
 }
 
@@ -385,6 +403,12 @@ async function collectBaseStatus(cwd: string, base: string): Promise<StatusRespo
     const diff = diffRes.stdout
     const binary = diff.includes('Binary files')
     const counts = binary ? { added: 0, deleted: 0 } : countLines(diff)
+    let mtime = 0
+    try {
+      mtime = statSync(resolve(cwd, path)).mtimeMs
+    } catch {
+      // ignore
+    }
     files.push({
       path,
       xy: `${status} `,
@@ -397,6 +421,7 @@ async function collectBaseStatus(cwd: string, base: string): Promise<StatusRespo
       diff: binary ? 'Binary files differ' : diff,
       binary,
       hunks: [],
+      mtime,
     })
   }
   return { isRepo: true, branch, upstream: null, ahead: 0, behind: 0, files }
