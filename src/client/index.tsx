@@ -20,7 +20,7 @@
  * overlay registration's inject face).
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, Fragment } from 'react'
-import type { CSSProperties, ReactElement, ReactNode } from 'react'
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactElement, ReactNode } from 'react'
 import { diffLines } from 'diff'
 import { EditorState, type Extension } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
@@ -2189,14 +2189,14 @@ function CodeEditor({ path, value, onChange }: { path: string; value: string; on
   return <div ref={hostRef} className="dsdr-cm-host" />
 }
 
-function FileTreeResizeHandle({ width, onResize }: { width: number; onResize: (width: number) => void }) {
+function FileTreeResizeHandle({ width, onResize, reverse = false }: { width: number; onResize: (width: number) => void; reverse?: boolean }) {
   return <div className="dsdr-file-tree-resize" role="separator" aria-orientation="vertical" aria-label="Resize file tree" onPointerDown={(event) => {
     event.preventDefault()
     const startX = event.clientX
     const startWidth = width
     const previousCursor = document.body.style.cursor
     document.body.style.cursor = 'col-resize'
-    const move = (moveEvent: PointerEvent) => onResize(Math.max(180, Math.min(560, startWidth + moveEvent.clientX - startX)))
+    const move = (moveEvent: PointerEvent) => onResize(Math.max(180, Math.min(560, startWidth + (reverse ? startX - moveEvent.clientX : moveEvent.clientX - startX))))
     const up = () => {
       document.body.style.cursor = previousCursor
       window.removeEventListener('pointermove', move)
@@ -2284,15 +2284,15 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onActivateFile
             fillHeight
             activePath={selected}
             renderLeaf={(leaf) => (
-              <div className={'dsdr-files-item' + (selected === leaf.path ? ' dsdr-files-item-active' : '')} onContextMenu={(event) => { event.preventDefault(); setMenu({ path: leaf.path, x: event.clientX, y: event.clientY }) }} title={leaf.path}>
+              <div className={'dsdr-files-item' + (selected === leaf.path ? ' dsdr-files-item-active' : '')} onContextMenu={(event) => { event.preventDefault(); setMenu({ path: leaf.path, x: Math.max(8, Math.min(event.clientX, window.innerWidth - 196)), y: event.clientY }) }} title={leaf.path}>
                 <button type="button" className="dsdr-files-item-main" onClick={() => { onActivateFile(leaf.path); void open(leaf.path) }}><FileTreeGlyph path={leaf.path} /><span className="dsdr-files-item-name">{leaf.name}</span></button>
-                <button type="button" className="dsdr-files-item-menu" aria-label={`Actions for ${leaf.name}`} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ path: leaf.path, x: rect.left, y: rect.bottom + 4 }) }}>•••</button>
+                <button type="button" className="dsdr-files-item-menu" aria-label={`Actions for ${leaf.name}`} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ path: leaf.path, x: Math.max(8, rect.right - 190), y: rect.bottom + 4 }) }}>•••</button>
               </div>
             )}
           />
           {!loading && shown.length === 0 ? <div className="dsdr-empty">{t('files.empty')}</div> : null}
         </div>
-        <FileTreeResizeHandle width={treeWidth} onResize={onTreeWidthChange} />
+        <FileTreeResizeHandle width={treeWidth} onResize={onTreeWidthChange} reverse={docked} />
         <div className="dsdr-files-editor">
           <div className="dsdr-files-path">{selected ?? (loading ? t('files.loading') : '')}</div>
           {selected && fileKind === 'text' ? (
@@ -2970,6 +2970,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const [openFileTabs, setOpenFileTabs] = useState<string[]>([])
   const [filesTarget, setFilesTarget] = useState<string | null>(null)
   const [newTabMenu, setNewTabMenu] = useState<{ x: number; y: number } | null>(null)
+  const [reviewFileMenu, setReviewFileMenu] = useState<{ path: string; x: number; y: number } | null>(null)
   const newTabMenuRef = useRef<HTMLSpanElement>(null)
   const [collapsedReviewFiles, setCollapsedReviewFiles] = useState<ReadonlySet<string>>(() => new Set())
   const [fileTreeVisible, setFileTreeVisible] = useState(true)
@@ -3340,6 +3341,18 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     ? commitSegments.find((s) => s.path === commitActiveFile.path)?.text ?? commitDiff?.diff ?? ''
     : commitDiff?.diff ?? ''
 
+  const showReviewFileMenu = (event: ReactMouseEvent, path: string) => {
+    event.preventDefault()
+    setReviewFileMenu({ path, x: Math.max(8, Math.min(event.clientX, window.innerWidth - 196)), y: event.clientY })
+  }
+  const addFileToChat = (path: string) => {
+    composerDraftStore.update((draft) => {
+      draft.sessionId = currentId ?? null
+      draft.text = `请查看工作区文件：${path}`
+      draft.key = draft.key + 1
+    })
+  }
+
   /** Leaf row shared by the staged/unstaged file trees. */
   const workspaceLeaf = ({ item: file, name }: { item: DiffFile; name: string }) => (
     <button
@@ -3347,6 +3360,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       role="option"
       aria-selected={file.path === selected}
       className={`dsdr-file${file.path === selected ? ' dsdr-file-selected' : ''}`}
+      onContextMenu={(event) => showReviewFileMenu(event, file.path)}
       onClick={() => {
         setSelected(file.path)
         setSelectedCommit(null)
@@ -3841,6 +3855,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
             </div>
           </div>
         ) : null}
+        {reviewFileMenu ? <div className="dsdr-files-menu" role="menu" style={{ left: reviewFileMenu.x, top: reviewFileMenu.y }} onPointerLeave={() => setReviewFileMenu(null)}><button type="button" role="menuitem" onClick={() => { void openInEditor(activeCwd ?? cwd, reviewFileMenu.path); setReviewFileMenu(null) }}>Open in editor</button><button type="button" role="menuitem" onClick={() => { void writeClipboard(reviewFileMenu.path); setReviewFileMenu(null) }}>Copy path</button><button type="button" role="menuitem" onClick={() => { addFileToChat(reviewFileMenu.path); setReviewFileMenu(null) }}>Add to chat</button></div> : null}
         {surface === 'review' ? (
           <div className="dsdr-review-toolbar">
             {tab === 'workspace' && status?.isRepo ? (
@@ -3871,13 +3886,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
           </div>
         ) : null}
         {surface !== 'review' ? (
-          <FilesWorkspace key={surface} cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} target={filesTarget} onActivateFile={replaceActiveFilesTab} treeWidth={fileTreeWidth} onTreeWidthChange={setFileTreeWidth} docked={docked} onAddToChat={(path) => {
-            composerDraftStore.update((draft) => {
-              draft.sessionId = currentId ?? null
-              draft.text = `请查看工作区文件：${path}`
-              draft.key = draft.key + 1
-            })
-          }} />
+          <FilesWorkspace key={surface} cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} target={filesTarget} onActivateFile={replaceActiveFilesTab} treeWidth={fileTreeWidth} onTreeWidthChange={setFileTreeWidth} docked={docked} onAddToChat={addFileToChat} />
         ) : (
           <>
         {sendOpen ? (
@@ -3961,7 +3970,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                   </div>
                 ))}
               </div>
-              <FileTreeResizeHandle width={fileTreeWidth} onResize={setFileTreeWidth} />
+              <FileTreeResizeHandle width={fileTreeWidth} onResize={setFileTreeWidth} reverse={docked} />
               <div className="dsdr-diff">
                 {selectedChange ? (
                   <>
@@ -4312,7 +4321,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                 </>
               ) : null}
             </div>
-            <FileTreeResizeHandle width={fileTreeWidth} onResize={setFileTreeWidth} />
+            <FileTreeResizeHandle width={fileTreeWidth} onResize={setFileTreeWidth} reverse={docked} />
             <div className="dsdr-diff">
               {review?.ok ? (
                 <div className={`dsdr-verdict${review.verdict === 'incorrect' ? ' dsdr-verdict-bad' : ' dsdr-verdict-ok'}`}>
