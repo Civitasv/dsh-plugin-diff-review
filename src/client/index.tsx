@@ -45,6 +45,8 @@ export const name = 'diff-review'
 export const inject = ['sessions', 'slots', 'locale']
 
 const LOCALE_NS = 'diff-review'
+/** Max comment chips shown in the dock row before collapsing into +N. */
+const MAX_DOCK_CHIPS = 4
 const STATUS_URL = 'diff-review/status'
 const APPLY_URL = 'diff-review/apply'
 const APPLY_HUNK_URL = 'diff-review/apply-hunk'
@@ -742,7 +744,7 @@ const REVIEW_CSS = `
 .dsdr-pr-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-pr-meta{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
 .dsdr-pr-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere}
-.dsdr-dock{box-sizing:border-box;position:relative;display:flex;flex-direction:column;gap:2px;width:100%;max-width:var(--dsh-composer-card-max-width, 780px);margin:0 auto calc(-1 * var(--dsh-composer-stack-gap, 6px) - 8px);padding:8px 16px;background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2-darkmode-thin);border-bottom:none;border-radius:22px 22px 0 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary)}
+.dsdr-dock{box-sizing:border-box;display:flex;flex-direction:column;gap:6px;width:100%;max-width:var(--dsh-composer-card-max-width, 780px);margin:0 auto calc(-1 * var(--dsh-composer-stack-gap, 6px) - 8px);padding:8px 16px;background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2-darkmode-thin);border-bottom:none;border-radius:22px 22px 0 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary)}
 .dsdr-dock-head{display:flex;align-items:center;gap:6px;min-height:22px;margin:-8px -16px;padding:8px 16px;border-radius:22px 22px 0 0;cursor:pointer}
 .dsdr-dock-head:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-dock-icon{display:inline-flex;color:var(--dsw-alias-button-info-fill)}
@@ -752,13 +754,13 @@ const REVIEW_CSS = `
 .dsdr-dock-head:hover .dsdr-dock-send-hint{visibility:visible}
 .dsdr-dock-close{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:0}
 .dsdr-dock-close:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsdr-dock-list{position:absolute;left:0;right:0;bottom:100%;display:flex;flex-direction:column;gap:2px;padding:8px;max-height:220px;overflow-y:auto;background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2-darkmode-thin);border-bottom:none;border-radius:22px 22px 0 0;box-shadow:var(--dsw-shadow-lv3);z-index:10;animation:dsdr-dock-pop .12s ease-out}
-@keyframes dsdr-dock-pop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-.dsdr-dock-list-hint{padding:4px 8px 2px;font-size:10px;color:var(--dsw-alias-label-tertiary);text-align:center;border-top:1px solid var(--dsw-alias-border-l1);margin-top:2px}
-.dsdr-dock-item{display:flex;flex-direction:column;gap:1px;text-align:left;border:0;background:transparent;border-radius:7px;padding:4px 8px;cursor:pointer;font:inherit}
-.dsdr-dock-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.dsdr-dock-loc{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono);white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
-.dsdr-dock-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.dsdr-dock-chips{display:flex;align-items:center;gap:6px;min-height:26px;margin:0 -16px;padding:0 16px;overflow:hidden}
+.dsdr-dock-chip{flex:0 1 auto;min-width:0;display:flex;align-items:center;gap:6px;border:0;background:var(--dsw-alias-bg-layer-2);border-radius:7px;padding:3px 8px;cursor:pointer;font:inherit;text-align:left}
+.dsdr-dock-chip:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsdr-dock-chip-loc{flex:none;font-family:var(--dsw-font-mono);font-size:10px;color:var(--dsw-alias-button-info-fill);white-space:nowrap;max-width:42%;overflow:hidden;text-overflow:ellipsis}
+.dsdr-dock-chip-text{min-width:0;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dsdr-dock-chip-more{flex:none;display:inline-flex;align-items:center;border:0;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;font:inherit;font-size:11px;line-height:16px;padding:2px 6px;border-radius:6px;white-space:nowrap}
+.dsdr-dock-chip-more:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsdr-send{position:absolute;z-index:40;top:52px;right:16px;width:min(480px,calc(100% - 32px));border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-specific-menu);border-radius:12px;box-shadow:var(--dsw-shadow-lv3);padding:12px;display:flex;flex-direction:column;gap:8px}
 .dsdr-send-title{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}
 .dsdr-send-hint{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}
@@ -980,7 +982,7 @@ const zh = {
   'review.dockComments': '行内评论 {n} 条',
   'review.dockVerdict': '评审结论待发送',
   'review.dockSend': '点击发送评论',
-  'review.dockSendHint': '点击顶栏立即发送评论',
+  'review.dockMore': '还有 {n} 条评论，点击在评审面板中查看',
   'review.copiedFallback': '会话不可用，评论已复制（请粘贴发送）',
   'review.sendFailed': '评论发送失败',
   'review.dockJump': '点击在评审面板中打开对应变更',
@@ -1127,7 +1129,7 @@ const en: Record<keyof typeof zh, string> = {
   'review.copiedFallback': 'Session unavailable — comments copied (paste to send)',
   'review.sendFailed': 'Failed to send comments',
   'review.dockJump': 'Open the matching change in the review panel',
-  'review.dockSendHint': 'Click the strip above to send comments now',
+  'review.dockMore': '{n} more comments — open the review panel',
   'review.cardTitle': 'Inline review',
   'review.cardComments': '{n} comments',
   'review.cardVerdict': 'AI review verdict',
@@ -2205,7 +2207,6 @@ type DiffReviewComposerDockProps = PropsRuntime<'conversation.input.dock'> & Pro
 function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, input, t }: DiffReviewComposerDockProps) {
   const cwd = useSessions((s: SessionListState) => s.byId[sessionId]?.cwd)
   const pending = useSyncExternalStore(pendingCommentsStore.subscribe, pendingCommentsStore.getSnapshot)
-  const [hover, setHover] = useState(false)
   const [dismissed, setDismissed] = useState(false)
   const [carryFlash, setCarryFlash] = useState<string | null>(null)
   const carriedIds = useRef<string | null>(null)
@@ -2338,8 +2339,18 @@ function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, 
     })
   }
 
+  /** Open the review panel without a jump target (+N chip). */
+  const openPanel = () => {
+    overlayStore.update((d) => {
+      d.open = true
+      d.cwd = cwd
+      d.focus = null
+      d.key = d.key + 1
+    })
+  }
+
   return (
-    <div className="dsdr-dock" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+    <div className="dsdr-dock">
       <div
         className="dsdr-dock-head"
         role="button"
@@ -2376,21 +2387,25 @@ function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, 
           <IconX />
         </button>
       </div>
-      {hover ? (
-        <div className="dsdr-dock-list">
-          {unsentComments.map((comment) => (
+      {unsentComments.length > 0 ? (
+        <div className="dsdr-dock-chips">
+          {unsentComments.slice(0, MAX_DOCK_CHIPS).map((comment) => (
             <button
               key={comment.id}
               type="button"
-              className="dsdr-dock-item"
+              className="dsdr-dock-chip"
               title={t('review.dockJump')}
               onClick={() => focusComment(comment)}
             >
-              <span className="dsdr-dock-loc">{comment.path}{comment.lineNew !== null ? `:${comment.lineNew}` : ''}</span>
-              <span className="dsdr-dock-text">{comment.text}</span>
+              <span className="dsdr-dock-chip-loc">{comment.path}{comment.lineNew !== null ? `:${comment.lineNew}` : ''}</span>
+              <span className="dsdr-dock-chip-text">{comment.text}</span>
             </button>
           ))}
-          <span className="dsdr-dock-list-hint">{t('review.dockSendHint')}</span>
+          {unsentComments.length > MAX_DOCK_CHIPS ? (
+            <button type="button" className="dsdr-dock-chip-more" title={t('review.dockMore', { n: unsentComments.length - MAX_DOCK_CHIPS })} onClick={openPanel}>
+              +{unsentComments.length - MAX_DOCK_CHIPS}
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>
