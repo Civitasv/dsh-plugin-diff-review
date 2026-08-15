@@ -3134,11 +3134,6 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   }
 
   const onFileAction = (action: 'accept' | 'revert' | 'unstage', path: string) => {
-    if (action === 'revert' && confirm !== 'file') {
-      setConfirm('file')
-      setTimeout(() => setConfirm((c) => (c === 'file' ? null : c)), 2500)
-      return
-    }
     void runApply(action, path)
   }
 
@@ -4090,24 +4085,13 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                       ↗ {t('editor.openFile')}
                     </button>
                     {allowActions && selectedFile.unstaged ? (
-                      <button type="button" className="dsdr-btn dsdr-btn-primary" disabled={busy} onClick={() => onFileAction('accept', selectedFile.path)}>
-                        {t('review.accept')}
-                      </button>
+                      <button type="button" className="dsdr-file-icon" title={t('hunk.stage')} aria-label={t('hunk.stage')} disabled={busy} onClick={() => onFileAction('accept', selectedFile.path)}>+</button>
                     ) : null}
                     {allowActions && selectedFile.staged ? (
-                      <button type="button" className="dsdr-btn" disabled={busy} onClick={() => onFileAction('unstage', selectedFile.path)}>
-                        {t('review.unstage')}
-                      </button>
+                      <button type="button" className="dsdr-file-icon" title={t('hunk.unstage')} aria-label={t('hunk.unstage')} disabled={busy} onClick={() => onFileAction('unstage', selectedFile.path)}>−</button>
                     ) : null}
                     {allowActions ? (
-                      <button
-                        type="button"
-                        className={`dsdr-btn dsdr-btn-danger${confirm === 'file' ? ' dsdr-btn-confirm' : ''}`}
-                        disabled={busy}
-                        onClick={() => onFileAction('revert', selectedFile.path)}
-                      >
-                        {confirm === 'file' ? t('review.confirmRevert') : t('review.revert')}
-                      </button>
+                      <button type="button" className="dsdr-file-icon dsdr-file-icon-danger" title={t('hunk.revert')} aria-label={t('hunk.revert')} disabled={busy} onClick={() => onFileAction('revert', selectedFile.path)}>↶</button>
                     ) : null}
                   </div>
                   {view === 'split' && !selectedFile.binary && gitSplitBlocks(selectedFile.diff).length > 0 ? (
