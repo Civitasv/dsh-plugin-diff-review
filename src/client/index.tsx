@@ -974,15 +974,14 @@ const REVIEW_CSS = `
 .dsdr-turn-summary-file-stats{margin-left:auto;flex:none;font-family:var(--dsw-font-sans,system-ui);font-size:12px}
 /* --- Files drawer --- */
 .dsdr-files-workspace{display:flex;min-height:0;flex:1;flex-direction:column;background:var(--dsw-alias-bg-module-platform)}
-.dsdr-files-toolbar{display:flex;align-items:center;padding:9px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform)}
 .dsdr-files-search{width:100%;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);padding:7px 10px;font:inherit;font-size:12px;line-height:18px}
 .dsdr-files-search:focus{outline:none;border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-brand-primary) 15%,transparent)}
 .dsdr-files-content{display:grid;min-height:0;flex:1;overflow:hidden}
-.dsdr-files-list{min-height:0;overflow:hidden;border-right:1px solid var(--dsw-alias-border-l1);padding:8px 6px;background:var(--dsw-alias-bg-layer-1)}.dsdr-arborist{width:100%}.dsdr-arborist-fill{height:100%}.dsdr-arborist [role=tree]{overscroll-behavior:contain}.dsdr-arborist [role=row]{width:100%}.dsdr-arborist [role=row]::before{content:"";position:absolute;left:7px;top:-5px;bottom:-5px;width:1px;background:var(--dsw-alias-border-l1);opacity:.8;pointer-events:none}
+.dsdr-files-list{display:flex;min-height:0;overflow:hidden;flex-direction:column;border-right:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}.dsdr-files-tree-toolbar{flex:none;padding:9px 8px 7px;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform)}.dsdr-files-tree-body{position:relative;min-height:0;flex:1;padding:8px 6px}.dsdr-arborist{width:100%}.dsdr-arborist-fill{height:100%}.dsdr-arborist [role=tree]{overscroll-behavior:contain}.dsdr-arborist [role=row]{width:100%}.dsdr-arborist [role=row]::before{content:"";position:absolute;left:7px;top:-5px;bottom:-5px;width:1px;background:var(--dsw-alias-border-l1);opacity:.8;pointer-events:none}
 .dsdr-files-item{display:flex;align-items:center;width:100%;height:100%;box-sizing:border-box;border:0;border-radius:7px;background:transparent;padding:0 8px;color:var(--dsw-alias-label-secondary);font:12px/20px var(--dsw-font-mono);text-align:left;cursor:pointer;min-width:0}
 .dsdr-files-item-main{display:flex;align-items:center;gap:7px;min-width:0;flex:1;height:100%;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;padding:0;position:relative;z-index:1}.dsdr-files-item-name{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.dsdr-files-item:hover,.dsdr-files-item-active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.dsdr-files-item-active{position:relative;background:transparent}.dsdr-files-item-active::before{content:"";position:absolute;z-index:0;inset:-5px 0;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);box-shadow:inset 2px 0 0 var(--dsw-alias-brand-primary);pointer-events:none}.dsdr-files-item-menu{position:relative;z-index:1;flex:none;display:flex;align-items:center;justify-content:center;width:20px;height:20px;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;opacity:0}.dsdr-files-item:hover .dsdr-files-item-menu,.dsdr-files-item-menu:focus-visible{opacity:1}.dsdr-files-item-menu:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dsdr-tree-file-icon{display:grid;place-items:center;flex:none;width:17px;height:17px;border-radius:5px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-brand-primary);font:700 9px/1 var(--dsw-font-sans)}.dsdr-tree-file-icon-image{color:var(--dsw-alias-state-success-primary)}.dsdr-tree-file-icon-code{color:var(--dsw-alias-brand-primary)}
 .dsdr-files-menu{position:fixed;z-index:80;display:flex;min-width:180px;flex-direction:column;gap:2px;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-files-menu button{border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);padding:8px 10px;text-align:left;font:12px var(--dsw-font-sans);cursor:pointer}.dsdr-files-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.dsdr-files-editor{display:flex;min-width:0;min-height:0;flex-direction:column;background:var(--dsw-alias-bg-layer-1)}.dsdr-files-path{display:flex;align-items:center;gap:7px;padding:10px 14px;color:var(--dsw-alias-label-secondary);font:12px/18px var(--dsw-font-mono);white-space:nowrap;overflow:hidden;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform)}.dsdr-files-path-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsdr-files-editor{display:flex;min-width:0;min-height:0;flex-direction:column;background:var(--dsw-alias-bg-layer-1)}.dsdr-files-path{display:flex;align-items:center;gap:7px;padding:10px 14px;color:var(--dsw-alias-label-secondary);font:12px/18px var(--dsw-font-mono);white-space:nowrap;overflow:hidden;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform)}.dsdr-files-path-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsdr-files-path-spacer{flex:1}
 .dsdr-code-editor{min-height:0;flex:1;overflow:hidden;background:var(--dsw-alias-bg-layer-1)}.dsdr-cm-host{height:100%;min-height:0}.dsdr-cm-host .cm-editor{height:100%;background:var(--dsw-alias-bg-layer-1)}.dsdr-cm-host .cm-scroller{overflow:auto;font-family:var(--dsw-font-mono);line-height:21px}.dsdr-cm-host .cm-content{padding:14px 16px;min-height:100%;caret-color:var(--dsw-alias-label-primary)}.dsdr-cm-host .cm-gutters{border-right:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-tertiary);padding-top:14px}.dsdr-cm-host .cm-lineNumbers .cm-gutterElement{min-width:42px;padding:0 10px 0 8px}.dsdr-cm-host .cm-activeLine,.dsdr-cm-host .cm-activeLineGutter{background:color-mix(in srgb,var(--dsw-alias-interactive-bg-hover) 70%,transparent)}.dsdr-cm-host .cm-selectionBackground,.dsdr-cm-host ::selection{background:rgba(91,140,255,.42)!important}.dsdr-cm-host .cm-focused{outline:none}
 .dsdr-image-preview{display:flex;align-items:center;justify-content:center;min-height:0;flex:1;overflow:auto;padding:24px;background:var(--dsw-alias-bg-layer-1)}.dsdr-image-preview img{max-width:100%;max-height:100%;object-fit:contain;box-shadow:var(--dsw-shadow-lv2)}.dsdr-files-unavailable{display:flex;align-items:center;justify-content:center;min-height:0;flex:1;color:var(--dsw-alias-label-tertiary);font-size:13px}
 .dsdr-files-actions{display:flex;align-items:center;gap:6px;padding:8px 10px;border-top:1px solid var(--dsw-alias-border-l1)}
@@ -2225,7 +2224,7 @@ function FileTreeGlyph({ path }: { path: string }) {
   return <span className={`dsdr-tree-file-icon${image ? ' dsdr-tree-file-icon-image' : code ? ' dsdr-tree-file-icon-code' : ''}`} aria-hidden="true">{label}</span>
 }
 
-function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onActivateFile, onAddToChat, treeWidth, onTreeWidthChange, docked }: { cwd: string; t: CardT; collapsed: ReadonlySet<string>; onToggleDir: (path: string) => void; target: string | null; onActivateFile: (path: string) => void; onAddToChat: (path: string) => void; treeWidth: number; onTreeWidthChange: (width: number) => void; docked: boolean }) {
+function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onActivateFile, onAddToChat, treeWidth, onTreeWidthChange, docked, treeVisible, onToggleTree }: { cwd: string; t: CardT; collapsed: ReadonlySet<string>; onToggleDir: (path: string) => void; target: string | null; onActivateFile: (path: string) => void; onAddToChat: (path: string) => void; treeWidth: number; onTreeWidthChange: (width: number) => void; docked: boolean; treeVisible: boolean; onToggleTree: () => void }) {
   const [files, setFiles] = useState<WorkspaceFileEntry[]>([])
   const [filter, setFilter] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
@@ -2304,28 +2303,30 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onActivateFile
 
   return (
     <section className="dsdr-files-workspace" aria-label={t('files.title')}>
-      <div className="dsdr-files-toolbar"><input className="dsdr-files-search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={t('files.search')} autoFocus /></div>
       <div className={`dsdr-files-content${docked ? ' dsdr-files-content-docked' : ''}`} style={{ gridTemplateColumns: docked ? `minmax(0, 1fr) 5px ${treeWidth}px` : `${treeWidth}px 5px minmax(0, 1fr)` }}>
         <div className="dsdr-files-list">
-          <FileTreeView
-            nodes={tree}
-            collapsed={collapsed}
-            onToggleDir={onToggleDir}
-            depth={0}
-            fillHeight
-            activePath={selected}
-            renderLeaf={(leaf) => (
-              <div className={'dsdr-files-item' + (selected === leaf.path ? ' dsdr-files-item-active' : '')} onContextMenu={(event) => { event.preventDefault(); setMenu({ path: leaf.path, x: Math.max(8, Math.min(event.clientX, window.innerWidth - 196)), y: event.clientY }) }} title={leaf.path}>
-                <button type="button" className="dsdr-files-item-main" onClick={() => { onActivateFile(leaf.path); void open(leaf.path) }}><FileTreeGlyph path={leaf.path} /><span className="dsdr-files-item-name">{leaf.name}</span></button>
-                <button type="button" className="dsdr-files-item-menu" aria-label={`Actions for ${leaf.name}`} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ path: leaf.path, x: Math.max(8, rect.right - 190), y: rect.bottom + 4 }) }}>•••</button>
-              </div>
-            )}
-          />
-          {!loading && shown.length === 0 ? <div className="dsdr-empty">{t('files.empty')}</div> : null}
+          <div className="dsdr-files-tree-toolbar"><input className="dsdr-files-search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={t('files.search')} autoFocus /></div>
+          <div className="dsdr-files-tree-body">
+            <FileTreeView
+              nodes={tree}
+              collapsed={collapsed}
+              onToggleDir={onToggleDir}
+              depth={0}
+              fillHeight
+              activePath={selected}
+              renderLeaf={(leaf) => (
+                <div className={'dsdr-files-item' + (selected === leaf.path ? ' dsdr-files-item-active' : '')} onContextMenu={(event) => { event.preventDefault(); setMenu({ path: leaf.path, x: Math.max(8, Math.min(event.clientX, window.innerWidth - 196)), y: event.clientY }) }} title={leaf.path}>
+                  <button type="button" className="dsdr-files-item-main" onClick={() => { onActivateFile(leaf.path); void open(leaf.path) }}><FileTreeGlyph path={leaf.path} /><span className="dsdr-files-item-name">{leaf.name}</span></button>
+                  <button type="button" className="dsdr-files-item-menu" aria-label={`Actions for ${leaf.name}`} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ path: leaf.path, x: Math.max(8, rect.right - 190), y: rect.bottom + 4 }) }}>•••</button>
+                </div>
+              )}
+            />
+            {!loading && shown.length === 0 ? <div className="dsdr-empty">{t('files.empty')}</div> : null}
+          </div>
         </div>
         <FileTreeResizeHandle width={treeWidth} onResize={onTreeWidthChange} reverse={docked} />
         <div className="dsdr-files-editor">
-          <div className="dsdr-files-path">{selected ? <><FileTreeGlyph path={selected} /><span className="dsdr-files-path-text" title={selected}>{selected}</span></> : (loading ? t('files.loading') : '')}</div>
+          <div className="dsdr-files-path">{selected ? <><FileTreeGlyph path={selected} /><span className="dsdr-files-path-text" title={selected}>{selected}</span></> : <span>{loading ? t('files.loading') : t('files.title')}</span>}<span className="dsdr-files-path-spacer" /><button type="button" className="dsdr-file-icon" title={treeVisible ? 'Hide file tree' : 'Show file tree'} aria-label={treeVisible ? 'Hide file tree' : 'Show file tree'} onClick={onToggleTree}>▥</button></div>
           {selected && fileKind === 'text' ? (
             <div className="dsdr-code-editor">
               <CodeEditor path={selected} value={content} onChange={setContent} />
@@ -3956,7 +3957,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
           </div>
         ) : null}
         {surface !== 'review' ? (
-          <FilesWorkspace key={surface === FILES_BROWSER_TAB ? FILES_BROWSER_TAB : 'files-editor'} cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} target={filesTarget} onActivateFile={replaceActiveFilesTab} treeWidth={fileTreeWidth} onTreeWidthChange={setFileTreeWidth} docked={docked} onAddToChat={addFileToChat} />
+          <FilesWorkspace key={surface === FILES_BROWSER_TAB ? FILES_BROWSER_TAB : 'files-editor'} cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} target={filesTarget} onActivateFile={replaceActiveFilesTab} treeWidth={fileTreeWidth} onTreeWidthChange={setFileTreeWidth} docked={docked} treeVisible={fileTreeVisible} onToggleTree={() => setFileTreeVisible((visible) => !visible)} onAddToChat={addFileToChat} />
         ) : (
           <>
         {sendOpen ? (
