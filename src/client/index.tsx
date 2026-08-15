@@ -691,7 +691,7 @@ const REVIEW_CSS = `
 .dsdr-trigger:hover,.dsdr-trigger:focus-visible{color:var(--dsw-alias-label-secondary)}
 .dsdr-label{margin-left:2px}
 .dsdr-count{background:var(--dsw-alias-fill-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;min-width:16px;text-align:center;font-size:11px;line-height:16px;padding:0 5px;font-variant-numeric:tabular-nums}
-.dsdr-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:32px}.dsdr-overlay-docked{justify-content:flex-end;padding:0;background:transparent;pointer-events:none}.dsdr-overlay-docked .dsdr-panel{pointer-events:auto}
+.dsdr-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:32px}.dsdr-overlay-docked{justify-content:flex-end;padding:0;background:transparent}.dsdr-overlay-docked .dsdr-panel{pointer-events:auto}
 .dsdr-panel{box-sizing:border-box;position:relative;width:min(1120px,100%);height:min(720px,calc(100vh - 64px));max-width:calc(100vw - 64px);max-height:calc(100vh - 64px);background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;box-shadow:var(--dsw-shadow-lv3);display:flex;flex-direction:column;overflow:hidden}
 .dsdr-panel-docked{height:100vh!important;max-width:calc(100vw - 56px);max-height:none;border-width:0 0 0 1px;border-radius:0;box-shadow:var(--dsw-shadow-lv3)}.dsdr-panel-docked .dsdr-body{flex-direction:row-reverse}.dsdr-panel-docked .dsdr-files{border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-panel-docked .dsdr-file-tree-resize{margin-left:-2px;margin-right:-3px}.dsdr-panel-docked .dsdr-resize-e{left:-4px;right:auto;cursor:ew-resize}.dsdr-files-content-docked>.dsdr-files-list{grid-column:3;border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-files-content-docked>.dsdr-file-tree-resize{grid-column:2}.dsdr-files-content-docked>.dsdr-files-editor{grid-column:1;grid-row:1}
 .dsdr-panel-tree-hidden .dsdr-body>.dsdr-files,.dsdr-panel-tree-hidden .dsdr-body>.dsdr-file-tree-resize,.dsdr-panel-tree-hidden .dsdr-files-content>.dsdr-files-list,.dsdr-panel-tree-hidden .dsdr-files-content>.dsdr-file-tree-resize{display:none}.dsdr-panel-tree-hidden .dsdr-files-content{grid-template-columns:minmax(0,1fr)!important}
@@ -1141,6 +1141,7 @@ const zh = {
   'files.save': '保存',
   'files.saved': '已保存',
   'files.loading': '正在读取…',
+  'files.openEditor': '在编辑器中打开',
   'files.empty': '没有匹配文件',
   // fallback.*: labels of the built-in image fallback viewer (FallbackUserBubble),
   // used when a plain user message carries images.
@@ -1295,6 +1296,7 @@ const en: Record<keyof typeof zh, string> = {
   'files.save': 'Save',
   'files.saved': 'Saved',
   'files.loading': 'Loading…',
+  'files.openEditor': 'Open in editor',
   'files.empty': 'No matching files',
   // fallback.*: labels of the built-in image fallback viewer (FallbackUserBubble),
   // used when a plain user message carries images.
@@ -2378,7 +2380,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onActivateFile
         </div>
         <FileTreeResizeHandle width={treeWidth} onResize={onTreeWidthChange} reverse={docked} />
         <div className="dsdr-files-editor">
-          <div className="dsdr-files-path">{selected ? <><FileTreeGlyph path={selected} /><span className="dsdr-files-path-text" title={selected}>{selected}</span></> : <span>{loading ? t('files.loading') : t('files.title')}</span>}<span className="dsdr-files-path-spacer" /><button type="button" className="dsdr-file-icon" title={treeVisible ? 'Hide file tree' : 'Show file tree'} aria-label={treeVisible ? 'Hide file tree' : 'Show file tree'} onClick={onToggleTree}>▥</button></div>
+          <div className="dsdr-files-path">{selected ? <><FileTreeGlyph path={selected} /><span className="dsdr-files-path-text" title={selected}>{selected}</span></> : <span>{loading ? t('files.loading') : t('files.title')}</span>}<span className="dsdr-files-path-spacer" /><button type="button" className="dsdr-btn" title={t('files.openEditor')} onClick={() => void openSelectedInEditor(selected ?? cwd)}><span aria-hidden="true">↗</span>{t('files.openEditor')}</button><button type="button" className="dsdr-file-icon" title={treeVisible ? 'Hide file tree' : 'Show file tree'} aria-label={treeVisible ? 'Hide file tree' : 'Show file tree'} onClick={onToggleTree}>▥</button></div>
           {selected && fileKind === 'text' ? (
             <div className="dsdr-code-editor">
               <CodeEditor path={selected} value={content} onChange={setContent} />
