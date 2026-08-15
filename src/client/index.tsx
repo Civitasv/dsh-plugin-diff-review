@@ -751,7 +751,8 @@ const REVIEW_CSS = `
 .dsdr-cfg-failed{min-width:0;color:var(--dsw-alias-label-error);flex:1;margin:0;font-size:12px;line-height:1.5}
 .dsdr-cfg-actions{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:12px 0 4px;display:flex}
 .dsdr-body{display:flex;flex:1;min-height:0}
-.dsdr-files{width:300px;flex:none;border-right:1px solid var(--dsw-alias-border-l1);overflow-y:auto;padding:8px}
+.dsdr-files{flex:none;border-right:1px solid var(--dsw-alias-border-l1);overflow-y:auto;padding:8px}
+.dsdr-file-tree-resize{position:relative;z-index:2;flex:none;width:5px;margin-left:-3px;margin-right:-2px;cursor:col-resize;touch-action:none}.dsdr-file-tree-resize::after{content:"";position:absolute;inset:0 1px;background:transparent}.dsdr-file-tree-resize:hover::after,.dsdr-file-tree-resize:active::after{background:var(--dsw-alias-brand-primary)}
 .dsdr-round{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);padding:8px 8px 3px;font-weight:600}
 .dsdr-round-label{white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-weight:400;color:var(--dsw-alias-label-secondary)}
 .dsdr-file{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;border-radius:8px;padding:6px 8px;cursor:pointer;border:0;background:transparent;text-align:left;font:inherit;color:var(--dsw-alias-label-primary)}
@@ -774,8 +775,9 @@ const REVIEW_CSS = `
 .dsdr-diff{flex:1;min-width:0;overflow:auto;padding:10px 0}
 .dsdr-diff-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--dsw-alias-label-tertiary);font-size:13px}
 .dsdr-diff-head{display:flex;align-items:center;gap:10px;padding:6px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
-.dsdr-file-head-actions{display:flex;gap:3px;opacity:0;transition:opacity .12s}.dsdr-diff-head:hover .dsdr-file-head-actions,.dsdr-file-head-actions:focus-within{opacity:1}
-.dsdr-diff-path{font-family:var(--dsw-font-mono);font-size:13px;color:var(--dsw-alias-label-primary);flex:1;min-width:0;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.dsdr-file-head-actions{display:flex;flex:none;gap:3px;opacity:0;transition:opacity .12s}.dsdr-diff-head:hover .dsdr-file-head-actions,.dsdr-file-head-actions:focus-within{opacity:1}
+.dsdr-diff-path{font-family:var(--dsw-font-mono);font-size:13px;color:var(--dsw-alias-label-primary);flex:1;min-width:0;display:flex;align-items:center;gap:6px}
+.dsdr-diff-path-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dsdr-diff-stats{font-size:11px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;flex:none}
 .dsdr-diff-scroll{flex:1;min-height:0;overflow:auto;display:flex}
 .dsdr-pre{margin:0;padding:8px 0;font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:var(--dsdr-diff-size, 12px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px);white-space:pre;min-width:100%;flex:1}
@@ -951,7 +953,7 @@ const REVIEW_CSS = `
 .dsdr-files-toolbar{display:flex;align-items:center;padding:9px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform)}
 .dsdr-files-search{width:100%;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);padding:7px 10px;font:inherit;font-size:12px;line-height:18px}
 .dsdr-files-search:focus{outline:none;border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-brand-primary) 15%,transparent)}
-.dsdr-files-content{display:grid;grid-template-columns:minmax(230px,31%) 1fr;min-height:0;flex:1}
+.dsdr-files-content{display:grid;min-height:0;flex:1}
 .dsdr-files-list{overflow:auto;border-right:1px solid var(--dsw-alias-border-l1);padding:8px 6px;background:var(--dsw-alias-bg-layer-1)}
 .dsdr-files-item{display:flex;width:100%;box-sizing:border-box;border:0;border-radius:6px;background:transparent;padding:6px 9px;color:var(--dsw-alias-label-secondary);font:11px/17px var(--dsw-font-mono);text-align:left;cursor:pointer}
 .dsdr-files-item:hover,.dsdr-files-item-active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
@@ -2102,7 +2104,25 @@ function highlightCode(value: string): ReactNode[] {
   })
 }
 
-function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat }: { cwd: string; t: CardT; collapsed: ReadonlySet<string>; onToggleDir: (path: string) => void; target: string | null; onAddToChat: (path: string) => void }) {
+function FileTreeResizeHandle({ width, onResize }: { width: number; onResize: (width: number) => void }) {
+  return <div className="dsdr-file-tree-resize" role="separator" aria-orientation="vertical" aria-label="Resize file tree" onPointerDown={(event) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = width
+    const previousCursor = document.body.style.cursor
+    document.body.style.cursor = 'col-resize'
+    const move = (moveEvent: PointerEvent) => onResize(Math.max(180, Math.min(560, startWidth + moveEvent.clientX - startX)))
+    const up = () => {
+      document.body.style.cursor = previousCursor
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up, { once: true })
+  }} />
+}
+
+function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat, treeWidth, onTreeWidthChange }: { cwd: string; t: CardT; collapsed: ReadonlySet<string>; onToggleDir: (path: string) => void; target: string | null; onAddToChat: (path: string) => void; treeWidth: number; onTreeWidthChange: (width: number) => void }) {
   const [files, setFiles] = useState<WorkspaceFileEntry[]>([])
   const [filter, setFilter] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
@@ -2163,7 +2183,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat }:
   return (
     <section className="dsdr-files-workspace" aria-label={t('files.title')}>
       <div className="dsdr-files-toolbar"><input className="dsdr-files-search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={t('files.search')} autoFocus /></div>
-      <div className="dsdr-files-content">
+      <div className="dsdr-files-content" style={{ gridTemplateColumns: `${treeWidth}px 5px minmax(0, 1fr)` }}>
         <div className="dsdr-files-list">
           <FileTreeView
             nodes={tree}
@@ -2174,6 +2194,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat }:
           />
           {!loading && shown.length === 0 ? <div className="dsdr-empty">{t('files.empty')}</div> : null}
         </div>
+        <FileTreeResizeHandle width={treeWidth} onResize={onTreeWidthChange} />
         <div className="dsdr-files-editor">
           <div className="dsdr-files-path">{selected ?? (loading ? t('files.loading') : '')}</div>
           {selected && fileKind === 'text' ? (
@@ -2790,6 +2811,21 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const [surface, setSurface] = useState<'review' | 'files'>('review')
   const [filesTarget, setFilesTarget] = useState<string | null>(null)
   const [collapsedReviewFiles, setCollapsedReviewFiles] = useState<ReadonlySet<string>>(() => new Set())
+  const [fileTreeWidth, setFileTreeWidth] = useState(() => {
+    try {
+      const stored = Number(localStorage.getItem('dsdr-file-tree-width'))
+      return Number.isFinite(stored) ? Math.max(180, Math.min(560, stored)) : 300
+    } catch {
+      return 300
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('dsdr-file-tree-width', String(fileTreeWidth))
+    } catch {
+      // private mode / unavailable — non-fatal
+    }
+  }, [fileTreeWidth])
   // Temporary line highlight (jump target from a PR comment or a finding).
   const [jumpLine, setJumpLine] = useState<number | null>(null)
 
@@ -3614,7 +3650,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
           </div>
         ) : null}
         {surface === 'files' ? (
-          <FilesWorkspace cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} target={filesTarget} onAddToChat={(path) => {
+          <FilesWorkspace cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} target={filesTarget} treeWidth={fileTreeWidth} onTreeWidthChange={setFileTreeWidth} onAddToChat={(path) => {
             composerDraftStore.update((draft) => {
               draft.sessionId = currentId ?? null
               draft.text = `请查看工作区文件：${path}`
@@ -3667,7 +3703,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
             </div>
           ) : (
             <div className="dsdr-body">
-              <div className="dsdr-files" role="listbox" aria-label={t('tab.session')}>
+              <div className="dsdr-files" style={{ width: fileTreeWidth }} role="listbox" aria-label={t('tab.session')}>
                 {rounds.map((round) => (
                   <div key={round.round}>
                     <div className="dsdr-round">
@@ -3704,6 +3740,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                   </div>
                 ))}
               </div>
+              <FileTreeResizeHandle width={fileTreeWidth} onResize={setFileTreeWidth} />
               <div className="dsdr-diff">
                 {selectedChange ? (
                   <>
@@ -3844,7 +3881,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
           </div>
         ) : status?.isRepo ? (
           <div className="dsdr-body">
-            <div className="dsdr-files" role="listbox" aria-label={t('tab.workspace')}>
+            <div className="dsdr-files" style={{ width: fileTreeWidth }} role="listbox" aria-label={t('tab.workspace')}>
               {scope === 'all' ? (
                 <>
                   {stagedFiles.length > 0 ? (
@@ -4054,6 +4091,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                 </>
               ) : null}
             </div>
+            <FileTreeResizeHandle width={fileTreeWidth} onResize={setFileTreeWidth} />
             <div className="dsdr-diff">
               {review?.ok ? (
                 <div className={`dsdr-verdict${review.verdict === 'incorrect' ? ' dsdr-verdict-bad' : ' dsdr-verdict-ok'}`}>
@@ -4120,17 +4158,19 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               ) : selectedFile ? (
                 <>
                   <div className="dsdr-diff-head">
-                    <span className="dsdr-diff-path" title={selectedFile.path}>
-                      {selectedFile.path}
-                      {selectedFile.origPath ? ` ← ${selectedFile.origPath}` : ''}
+                    <span className="dsdr-diff-path">
+                      <span className="dsdr-diff-path-text" title={selectedFile.path}>
+                        {selectedFile.path}
+                        {selectedFile.origPath ? ` ← ${selectedFile.origPath}` : ''}
+                      </span>
+                      <span className="dsdr-file-head-actions">
+                        <button type="button" className="dsdr-file-icon" title="Copy path" aria-label="Copy path" onClick={() => void writeClipboard(selectedFile.path)}>⧉</button>
+                        <button type="button" className="dsdr-file-icon" title={collapsedReviewFiles.has(selectedFile.path) ? 'Expand file' : 'Collapse file'} aria-label={collapsedReviewFiles.has(selectedFile.path) ? 'Expand file' : 'Collapse file'} onClick={() => toggleReviewFile(selectedFile.path)}>{collapsedReviewFiles.has(selectedFile.path) ? '⌄' : '⌃'}</button>
+                        <button type="button" className="dsdr-file-icon" title="Open file in Files" aria-label="Open file in Files" onClick={() => openInFilesTab(selectedFile.path)}>↗</button>
+                      </span>
                     </span>
                     <span className="dsdr-diff-stats">
                       {selectedFile.binary ? t('review.binary') : t('review.changes', { added: selectedFile.added, deleted: selectedFile.deleted })}
-                    </span>
-                    <span className="dsdr-file-head-actions">
-                      <button type="button" className="dsdr-file-icon" title="Copy path" aria-label="Copy path" onClick={() => void writeClipboard(selectedFile.path)}>⧉</button>
-                      <button type="button" className="dsdr-file-icon" title={collapsedReviewFiles.has(selectedFile.path) ? 'Expand file' : 'Collapse file'} aria-label={collapsedReviewFiles.has(selectedFile.path) ? 'Expand file' : 'Collapse file'} onClick={() => toggleReviewFile(selectedFile.path)}>{collapsedReviewFiles.has(selectedFile.path) ? '⌄' : '⌃'}</button>
-                      <button type="button" className="dsdr-file-icon" title="Open file in Files" aria-label="Open file in Files" onClick={() => openInFilesTab(selectedFile.path)}>↗</button>
                     </span>
                     {allowActions && selectedFile.unstaged ? (
                       <button type="button" className="dsdr-file-icon" title={t('hunk.stage')} aria-label={t('hunk.stage')} disabled={busy} onClick={() => onFileAction('accept', selectedFile.path)}>+</button>
