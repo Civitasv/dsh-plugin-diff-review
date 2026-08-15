@@ -705,7 +705,7 @@ const REVIEW_CSS = `
 .dsdr-tab:hover{color:var(--dsw-alias-label-secondary)}
 .dsdr-tab-active{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsdr-file-tab{display:inline-flex;align-items:center;gap:5px;max-width:180px;min-width:0;padding-right:5px}.dsdr-file-tab>span:not(.dsdr-file-tab-close){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsdr-file-tab .dsdr-tree-file-icon{width:15px;height:15px;font-size:8px}.dsdr-file-tab-close{display:inline-flex;align-items:center;justify-content:center;flex:none;width:16px;height:16px;border-radius:4px;color:var(--dsw-alias-label-tertiary)}.dsdr-file-tab-close:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dsdr-file-tab-close svg{width:11px;height:11px}
-.dsdr-new-tab{position:relative;display:inline-flex;flex:none}.dsdr-new-tab-btn{width:26px;height:26px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);font:16px/18px var(--dsw-font-sans);cursor:pointer}.dsdr-new-tab-btn:hover,.dsdr-new-tab-btn[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.dsdr-new-tab-menu{position:fixed;z-index:90;display:flex;min-width:170px;flex-direction:column;gap:2px;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-new-tab-menu button{display:flex;align-items:center;gap:9px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);padding:8px 9px;font:13px/18px var(--dsw-font-sans);text-align:left;cursor:pointer}.dsdr-new-tab-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}.dsdr-files-browser-icon{color:var(--dsw-alias-label-secondary);font-size:15px}
+.dsdr-new-tab{position:relative;display:inline-flex;flex:none}.dsdr-new-tab-btn{width:26px;height:26px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);font:16px/18px var(--dsw-font-sans);cursor:pointer}.dsdr-new-tab-btn:hover,.dsdr-new-tab-btn[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.dsdr-new-tab-menu{position:fixed;z-index:90;display:flex;min-width:142px;flex-direction:column;gap:2px;padding:5px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-new-tab-menu button{display:flex;align-items:center;gap:7px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);padding:6px 8px;font:12px/17px var(--dsw-font-sans);text-align:left;cursor:pointer}.dsdr-new-tab-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}.dsdr-files-browser-icon{color:var(--dsw-alias-label-secondary);font-size:13px}
 .dsdr-scope{display:inline-flex;align-items:center;gap:6px;margin-left:8px}
 .dsdr-scope .dsdr-sel-trigger{min-width:110px;height:26px;font-size:12px;line-height:18px;padding:0 8px;background:var(--dsw-alias-bg-layer-2)}
 .dsdr-spacer{flex:1}
@@ -2970,6 +2970,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const [openFileTabs, setOpenFileTabs] = useState<string[]>([])
   const [filesTarget, setFilesTarget] = useState<string | null>(null)
   const [newTabMenu, setNewTabMenu] = useState<{ x: number; y: number } | null>(null)
+  const newTabMenuRef = useRef<HTMLSpanElement>(null)
   const [collapsedReviewFiles, setCollapsedReviewFiles] = useState<ReadonlySet<string>>(() => new Set())
   const [fileTreeVisible, setFileTreeVisible] = useState(true)
   const [jumpOpen, setJumpOpen] = useState(false)
@@ -2988,6 +2989,21 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       // private mode / unavailable — non-fatal
     }
   }, [fileTreeWidth])
+  useEffect(() => {
+    if (!newTabMenu) return
+    const closeMenu = (event: PointerEvent) => {
+      if (!newTabMenuRef.current?.contains(event.target as Node)) setNewTabMenu(null)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setNewTabMenu(null)
+    }
+    window.addEventListener('pointerdown', closeMenu)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      window.removeEventListener('pointerdown', closeMenu)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [newTabMenu])
   // Temporary line highlight (jump target from a PR comment or a finding).
   const [jumpLine, setJumpLine] = useState<number | null>(null)
 
@@ -3804,7 +3820,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                 {path === FILES_BROWSER_TAB ? <span className="dsdr-files-browser-icon" aria-hidden="true">▱</span> : <FileTreeGlyph path={path} />}<span>{path === FILES_BROWSER_TAB ? t('files.title') : baseName(path)}</span><span role="button" className="dsdr-file-tab-close" aria-label={`Close ${path === FILES_BROWSER_TAB ? t('files.title') : baseName(path)}`} onClick={(event) => { event.stopPropagation(); closeFilesTab(path) }}><IconX /></span>
               </button>
             ))}
-            <span className="dsdr-new-tab">
+            <span ref={newTabMenuRef} className="dsdr-new-tab">
               <button type="button" className="dsdr-new-tab-btn" title="Open Files" aria-label="Open Files" aria-expanded={newTabMenu !== null} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setNewTabMenu((menu) => menu ? null : { x: rect.left, y: rect.bottom + 6 }) }}>+</button>
               {newTabMenu ? <div className="dsdr-new-tab-menu" role="menu" style={{ left: newTabMenu.x, top: newTabMenu.y }}><button type="button" role="menuitem" onClick={openFilesBrowser}><span className="dsdr-files-browser-icon" aria-hidden="true">▱</span>{t('files.title')}</button></div> : null}
             </span>
