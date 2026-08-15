@@ -689,7 +689,7 @@ const REVIEW_CSS = `
 .dsdr-count{background:var(--dsw-alias-fill-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;min-width:16px;text-align:center;font-size:11px;line-height:16px;padding:0 5px;font-variant-numeric:tabular-nums}
 .dsdr-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:32px}.dsdr-overlay-docked{justify-content:flex-end;padding:0;background:transparent;pointer-events:none}.dsdr-overlay-docked .dsdr-panel{pointer-events:auto}
 .dsdr-panel{box-sizing:border-box;position:relative;width:min(1120px,100%);height:min(720px,calc(100vh - 64px));max-width:calc(100vw - 64px);max-height:calc(100vh - 64px);background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;box-shadow:var(--dsw-shadow-lv3);display:flex;flex-direction:column;overflow:hidden}
-.dsdr-panel-docked{height:100vh!important;max-width:calc(100vw - 56px);max-height:none;border-width:0 0 0 1px;border-radius:0;box-shadow:var(--dsw-shadow-lv3)}.dsdr-panel-docked .dsdr-body{flex-direction:row-reverse}.dsdr-panel-docked .dsdr-files{border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-panel-docked .dsdr-file-tree-resize{margin-left:-2px;margin-right:-3px}.dsdr-files-content-docked>.dsdr-files-list{grid-column:3;border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-files-content-docked>.dsdr-file-tree-resize{grid-column:2}.dsdr-files-content-docked>.dsdr-files-editor{grid-column:1;grid-row:1}
+.dsdr-panel-docked{max-width:calc(100vw - 56px);max-height:calc(100vh - 32px);border-radius:12px 0 0 12px;box-shadow:var(--dsw-shadow-lv3)}.dsdr-panel-docked .dsdr-body{flex-direction:row-reverse}.dsdr-panel-docked .dsdr-files{border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-panel-docked .dsdr-file-tree-resize{margin-left:-2px;margin-right:-3px}.dsdr-panel-docked .dsdr-resize-e{left:-4px;right:auto;cursor:ew-resize}.dsdr-panel-docked .dsdr-resize-se{left:-5px;right:auto;cursor:nesw-resize}.dsdr-files-content-docked>.dsdr-files-list{grid-column:3;border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-files-content-docked>.dsdr-file-tree-resize{grid-column:2}.dsdr-files-content-docked>.dsdr-files-editor{grid-column:1;grid-row:1}
 .dsdr-resize{position:absolute;z-index:5}
 .dsdr-resize-e{top:0;right:-3px;width:7px;height:100%;cursor:ew-resize}
 .dsdr-resize-s{bottom:-3px;left:0;width:100%;height:7px;cursor:ns-resize}
@@ -774,9 +774,9 @@ const REVIEW_CSS = `
 .dsdr-file{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;border-radius:8px;padding:6px 8px;cursor:pointer;border:0;background:transparent;text-align:left;font:inherit;color:var(--dsw-alias-label-primary)}
 .dsdr-file:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-file-selected{background:var(--dsw-alias-interactive-bg-hover)}
-.dsdr-dir{display:flex;align-items:center;gap:5px;width:100%;box-sizing:border-box;border-radius:7px;padding:5px 8px;cursor:pointer;border:0;background:transparent;text-align:left;font:inherit;color:var(--dsw-alias-label-secondary);font-size:12px}
+.dsdr-dir{display:flex;align-items:center;gap:6px;width:100%;box-sizing:border-box;border-radius:7px;padding:5px 8px;cursor:pointer;border:0;background:transparent;text-align:left;font:inherit;color:var(--dsw-alias-label-secondary);font-size:12px}
 .dsdr-dir:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsdr-dir-caret{flex:none;width:12px;text-align:center;font-size:10px;color:var(--dsw-alias-label-tertiary)}
+.dsdr-dir-caret{flex:none;width:13px;text-align:center;font-size:10px;color:var(--dsw-alias-label-tertiary)}
 .dsdr-dir-name{flex:1;min-width:0;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-weight:600}
 .dsdr-dir-count{flex:none;font-size:10px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
 .dsdr-file-name{flex:1;min-width:0;font-size:12px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-family:var(--dsw-font-mono)}
@@ -970,9 +970,9 @@ const REVIEW_CSS = `
 .dsdr-files-search{width:100%;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);padding:7px 10px;font:inherit;font-size:12px;line-height:18px}
 .dsdr-files-search:focus{outline:none;border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-brand-primary) 15%,transparent)}
 .dsdr-files-content{display:grid;min-height:0;flex:1;overflow:hidden}
-.dsdr-files-list{min-height:0;overflow:hidden;border-right:1px solid var(--dsw-alias-border-l1);padding:8px 6px;background:var(--dsw-alias-bg-layer-1)}.dsdr-arborist{width:100%}.dsdr-arborist-fill{height:100%}.dsdr-arborist [role=tree]{overscroll-behavior:contain}
-.dsdr-files-item{display:flex;width:100%;box-sizing:border-box;border:0;border-radius:6px;background:transparent;padding:6px 9px;color:var(--dsw-alias-label-secondary);font:11px/17px var(--dsw-font-mono);text-align:left;cursor:pointer}
-.dsdr-files-item:hover,.dsdr-files-item-active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsdr-files-list{min-height:0;overflow:hidden;border-right:1px solid var(--dsw-alias-border-l1);padding:8px 6px;background:var(--dsw-alias-bg-layer-1)}.dsdr-arborist{width:100%}.dsdr-arborist-fill{height:100%}.dsdr-arborist [role=tree]{overscroll-behavior:contain}.dsdr-arborist [role=row]{width:100%}.dsdr-arborist [role=row]::before{content:"";position:absolute;left:7px;top:-5px;bottom:-5px;width:1px;background:var(--dsw-alias-border-l1);opacity:.8;pointer-events:none}
+.dsdr-files-item{display:flex;align-items:center;width:100%;height:100%;box-sizing:border-box;border:0;border-radius:7px;background:transparent;padding:0 6px;color:var(--dsw-alias-label-secondary);font:12px/20px var(--dsw-font-mono);text-align:left;cursor:pointer;min-width:0}
+.dsdr-files-item-main{display:flex;align-items:center;gap:7px;min-width:0;flex:1;height:100%;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;padding:0}.dsdr-files-item-name{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.dsdr-files-item:hover,.dsdr-files-item-active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.dsdr-files-item-menu{flex:none;display:flex;align-items:center;justify-content:center;width:20px;height:20px;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;opacity:0}.dsdr-files-item:hover .dsdr-files-item-menu,.dsdr-files-item-menu:focus-visible{opacity:1}.dsdr-files-item-menu:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dsdr-tree-file-icon{display:grid;place-items:center;flex:none;width:17px;height:17px;border-radius:5px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-brand-primary);font:700 9px/1 var(--dsw-font-sans)}.dsdr-tree-file-icon-image{color:var(--dsw-alias-state-success-primary)}.dsdr-tree-file-icon-code{color:var(--dsw-alias-brand-primary)}
 .dsdr-files-menu{position:fixed;z-index:80;display:flex;min-width:180px;flex-direction:column;gap:2px;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-files-menu button{border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);padding:8px 10px;text-align:left;font:12px var(--dsw-font-sans);cursor:pointer}.dsdr-files-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-files-editor{display:flex;min-width:0;min-height:0;flex-direction:column;background:var(--dsw-alias-bg-layer-1)}.dsdr-files-path{padding:10px 14px;color:var(--dsw-alias-label-secondary);font:12px/18px var(--dsw-font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform)}
 .dsdr-code-editor{min-height:0;flex:1;overflow:hidden;background:var(--dsw-alias-bg-layer-1)}.dsdr-cm-host{height:100%;min-height:0}.dsdr-cm-host .cm-editor{height:100%;background:var(--dsw-alias-bg-layer-1)}.dsdr-cm-host .cm-scroller{overflow:auto;font-family:var(--dsw-font-mono);line-height:21px}.dsdr-cm-host .cm-content{padding:14px 16px;min-height:100%;caret-color:var(--dsw-alias-label-primary)}.dsdr-cm-host .cm-gutters{border-right:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-tertiary);padding-top:14px}.dsdr-cm-host .cm-lineNumbers .cm-gutterElement{min-width:42px;padding:0 10px 0 8px}.dsdr-cm-host .cm-activeLine,.dsdr-cm-host .cm-activeLineGutter{background:color-mix(in srgb,var(--dsw-alias-interactive-bg-hover) 70%,transparent)}.dsdr-cm-host .cm-selectionBackground,.dsdr-cm-host ::selection{background:rgba(91,140,255,.42)!important}.dsdr-cm-host .cm-focused{outline:none}
@@ -2202,6 +2202,14 @@ function FileTreeResizeHandle({ width, onResize }: { width: number; onResize: (w
   }} />
 }
 
+function FileTreeGlyph({ path }: { path: string }) {
+  const extension = path.slice(path.lastIndexOf('.') + 1).toLowerCase()
+  const image = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(extension)
+  const code = ['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'css', 'html', 'json'].includes(extension)
+  const label = image ? '▧' : code ? extension.slice(0, 2).toUpperCase() : extension === 'md' ? 'M↓' : '·'
+  return <span className={`dsdr-tree-file-icon${image ? ' dsdr-tree-file-icon-image' : code ? ' dsdr-tree-file-icon-code' : ''}`} aria-hidden="true">{label}</span>
+}
+
 function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat, treeWidth, onTreeWidthChange, docked }: { cwd: string; t: CardT; collapsed: ReadonlySet<string>; onToggleDir: (path: string) => void; target: string | null; onAddToChat: (path: string) => void; treeWidth: number; onTreeWidthChange: (width: number) => void; docked: boolean }) {
   const [files, setFiles] = useState<WorkspaceFileEntry[]>([])
   const [filter, setFilter] = useState('')
@@ -2269,7 +2277,12 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat, t
             onToggleDir={onToggleDir}
             depth={0}
             fillHeight
-            renderLeaf={(leaf) => <button type="button" className={'dsdr-files-item' + (selected === leaf.path ? ' dsdr-files-item-active' : '')} onClick={() => void open(leaf.path)} onContextMenu={(event) => { event.preventDefault(); setMenu({ path: leaf.path, x: event.clientX, y: event.clientY }) }} title={leaf.path}>{leaf.name}</button>}
+            renderLeaf={(leaf) => (
+              <div className={'dsdr-files-item' + (selected === leaf.path ? ' dsdr-files-item-active' : '')} onContextMenu={(event) => { event.preventDefault(); setMenu({ path: leaf.path, x: event.clientX, y: event.clientY }) }} title={leaf.path}>
+                <button type="button" className="dsdr-files-item-main" onClick={() => void open(leaf.path)}><FileTreeGlyph path={leaf.path} /><span className="dsdr-files-item-name">{leaf.name}</span></button>
+                <button type="button" className="dsdr-files-item-menu" aria-label={`Actions for ${leaf.name}`} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ path: leaf.path, x: rect.left, y: rect.bottom + 4 }) }}>•••</button>
+              </div>
+            )}
           />
           {!loading && shown.length === 0 ? <div className="dsdr-empty">{t('files.empty')}</div> : null}
         </div>
@@ -3679,9 +3692,16 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
         role="dialog"
         aria-modal="true"
         aria-label={t('review.title')}
-        style={{ width: `${prefs.width}px`, height: docked ? '100vh' : `${prefs.height}px`, ...diffStyleVars(prefs) } as CSSProperties}
+        style={{ width: `${prefs.width}px`, height: `${prefs.height}px`, ...diffStyleVars(prefs) } as CSSProperties}
       >
-        {docked ? <ResizeHandle mode="e" onResize={(dx) => prefsStore.update((d) => { d.width = Math.max(MIN_PANEL_W, Math.min(window.innerWidth - 56, d.width - dx)) })} /> : <>
+        {docked ? <>
+        <ResizeHandle mode="e" onResize={(dx) => prefsStore.update((d) => { d.width = Math.max(MIN_PANEL_W, Math.min(window.innerWidth - 56, d.width - dx)) })} />
+        <ResizeHandle mode="s" onResize={(_dx, dy) => prefsStore.update((d) => { d.height = Math.max(MIN_PANEL_H, Math.min(window.innerHeight - 32, d.height + dy)) })} />
+        <ResizeHandle mode="se" onResize={(dx, dy) => prefsStore.update((d) => {
+          d.width = Math.max(MIN_PANEL_W, Math.min(window.innerWidth - 56, d.width - dx))
+          d.height = Math.max(MIN_PANEL_H, Math.min(window.innerHeight - 32, d.height + dy))
+        })} />
+        </> : <>
         <ResizeHandle
           mode="e"
           onResize={(dx) =>
