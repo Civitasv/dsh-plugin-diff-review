@@ -94,6 +94,13 @@ const pendingCommentsStore = createSnapshotStore<PendingComments>({
   review: null,
 })
 
+/** A one-shot request to put a file reference into a session's composer. */
+const composerDraftStore = createSnapshotStore<{ sessionId: SessionId | null; text: string; key: number }>({
+  sessionId: null,
+  text: '',
+  key: 0,
+})
+
 /**
  * Durable, per-workspace "already carried" state (survives reloads; isolated
  * per cwd so comments sent in one workspace never filter another's).
@@ -2509,12 +2516,24 @@ function UserReviewNodeView(props: UserReviewNodeProps) {
 
 type DiffReviewComposerDockProps = PropsRuntime<'conversation.input.dock'> & PropsLocale<'diff-review'> & { sessions: ISessions }
 
-function DiffReviewComposerDock({ sessionId, useSessions, sessions, t }: DiffReviewComposerDockProps) {
+function DiffReviewComposerDock({ sessionId, useSessions, sessions, inputActions, useInput, t }: DiffReviewComposerDockProps) {
   const cwd = useSessions((s: SessionListState) => s.byId[sessionId]?.cwd)
   const pending = useSyncExternalStore(pendingCommentsStore.subscribe, pendingCommentsStore.getSnapshot)
+  const draftRequest = useSyncExternalStore(composerDraftStore.subscribe, composerDraftStore.getSnapshot)
+  const draft = useInput((state) => state.draft)
   const [dismissed, setDismissed] = useState(false)
   const [carryFlash, setCarryFlash] = useState<string | null>(null)
   const carrying = useRef(false)
+  const consumedDraftRequest = useRef(0)
+
+  // Files → Add to chat should only prefill the native composer. Keep any
+  // existing draft and append the reference on a new line; submitting remains
+  // entirely under the user's control.
+  useEffect(() => {
+    if (draftRequest.key === 0 || draftRequest.key === consumedDraftRequest.current || draftRequest.sessionId !== sessionId) return
+    consumedDraftRequest.current = draftRequest.key
+    inputActions.setDraft(draft.trim() ? `${draft.trimEnd()}\n${draftRequest.text}` : draftRequest.text)
+  }, [draft, draftRequest, inputActions, sessionId])
 
   // Seed the store from server storage when nothing has been synced for this
   // workspace yet (panel never opened this session — comments persist in .git).
@@ -3594,7 +3613,11 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
         ) : null}
         {surface === 'files' ? (
           <FilesWorkspace cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} target={filesTarget} onAddToChat={(path) => {
-            void injectToSession(sessions, currentId ?? null, '请查看工作区文件：' + path).then((outcome) => setNotice({ kind: outcome === 'failed' ? 'error' : 'ok', text: outcome === 'failed' ? t('review.sendFailed') : t('review.sentToAgent') }))
+            composerDraftStore.update((draft) => {
+              draft.sessionId = currentId ?? null
+              draft.text = `请查看工作区文件：${path}`
+              draft.key = draft.key + 1
+            })
           }} />
         ) : (
           <>
