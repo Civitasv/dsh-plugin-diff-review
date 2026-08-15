@@ -947,6 +947,7 @@ const REVIEW_CSS = `
 .dsdr-files-list{overflow:auto;border-right:1px solid var(--dsw-alias-border-l1);padding:8px 6px}
 .dsdr-files-item{display:flex;width:100%;box-sizing:border-box;border:0;border-radius:7px;background:transparent;padding:6px 8px;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-mono);font-size:11px;line-height:16px;text-align:left;cursor:pointer}
 .dsdr-files-item:hover,.dsdr-files-item-active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsdr-files-menu{position:fixed;z-index:80;display:flex;min-width:180px;flex-direction:column;gap:2px;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-files-menu button{border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);padding:8px 10px;text-align:left;font:12px var(--dsw-font-sans);cursor:pointer}.dsdr-files-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-files-editor{display:flex;min-width:0;flex-direction:column}.dsdr-files-path{padding:8px 12px;color:var(--dsw-alias-label-tertiary);font:11px var(--dsw-font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid var(--dsw-alias-border-l1)}
 .dsdr-code-editor{display:flex;min-height:0;flex:1;background:var(--dsw-alias-bg-layer-1);overflow:hidden}.dsdr-code-lines{flex:none;width:48px;box-sizing:border-box;overflow:hidden;padding:12px 8px 12px 0;border-right:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-tertiary);font:12px/20px var(--dsw-font-mono);text-align:right;user-select:none}.dsdr-code-lines span{display:block;height:20px}
 .dsdr-code-layer{position:relative;min-width:0;min-height:0;flex:1;overflow:hidden}.dsdr-code-highlight,.dsdr-files-text{box-sizing:border-box;position:absolute;inset:0;margin:0;padding:12px 14px;border:0;font:12px/20px var(--dsw-font-mono);tab-size:2;white-space:pre;overflow:auto}.dsdr-code-highlight{pointer-events:none;color:var(--dsw-alias-label-primary);background:transparent}.dsdr-files-text{resize:none;background:transparent;color:transparent;caret-color:var(--dsw-alias-label-primary);outline:0;-webkit-text-fill-color:transparent}.dsdr-files-text::selection{background:rgba(91,140,255,.35)}
@@ -2093,7 +2094,7 @@ function highlightCode(value: string): ReactNode[] {
   })
 }
 
-function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target }: { cwd: string; t: CardT; collapsed: ReadonlySet<string>; onToggleDir: (path: string) => void; target: string | null }) {
+function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat }: { cwd: string; t: CardT; collapsed: ReadonlySet<string>; onToggleDir: (path: string) => void; target: string | null; onAddToChat: (path: string) => void }) {
   const [files, setFiles] = useState<WorkspaceFileEntry[]>([])
   const [filter, setFilter] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
@@ -2104,6 +2105,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target }: { cwd: strin
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [menu, setMenu] = useState<{ path: string; x: number; y: number } | null>(null)
   const savedContent = useRef('')
   const codeRef = useRef<HTMLPreElement>(null)
 
@@ -2159,7 +2161,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target }: { cwd: strin
             collapsed={collapsed}
             onToggleDir={onToggleDir}
             depth={0}
-            renderLeaf={(leaf) => <button type="button" className={`dsdr-files-item${selected === leaf.path ? ' dsdr-files-item-active' : ''}`} onClick={() => void open(leaf.path)} title={leaf.path}>{leaf.name}</button>}
+            renderLeaf={(leaf) => <button type="button" className={'dsdr-files-item' + (selected === leaf.path ? ' dsdr-files-item-active' : '')} onClick={() => void open(leaf.path)} onContextMenu={(event) => { event.preventDefault(); setMenu({ path: leaf.path, x: event.clientX, y: event.clientY }) }} title={leaf.path}>{leaf.name}</button>}
           />
           {!loading && shown.length === 0 ? <div className="dsdr-empty">{t('files.empty')}</div> : null}
         </div>
@@ -2179,6 +2181,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target }: { cwd: strin
           {selected ? <div className="dsdr-files-actions"><span className="dsdr-notice">{saving ? t('files.loading') : notice ?? ''}</span></div> : null}
         </div>
       </div>
+      {menu ? <div className="dsdr-files-menu" role="menu" style={{ left: menu.x, top: menu.y }} onPointerLeave={() => setMenu(null)}><button type="button" role="menuitem" onClick={() => { void openInEditor(cwd, menu.path); setMenu(null) }}>Open in editor</button><button type="button" role="menuitem" onClick={() => { void writeClipboard(menu.path); setMenu(null) }}>Copy path</button><button type="button" role="menuitem" onClick={() => { onAddToChat(menu.path); setMenu(null) }}>Add to chat</button></div> : null}
     </section>
   )
 }
@@ -3590,7 +3593,9 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
           </div>
         ) : null}
         {surface === 'files' ? (
-          <FilesWorkspace cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} target={filesTarget} />
+          <FilesWorkspace cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} target={filesTarget} onAddToChat={(path) => {
+            void injectToSession(sessions, currentId ?? null, '请查看工作区文件：' + path).then((outcome) => setNotice({ kind: outcome === 'failed' ? 'error' : 'ok', text: outcome === 'failed' ? t('review.sendFailed') : t('review.sentToAgent') }))
+          }} />
         ) : (
           <>
         {sendOpen ? (
