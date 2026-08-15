@@ -2284,6 +2284,23 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onActivateFile
     const timer = window.setTimeout(() => void save(), 800)
     return () => window.clearTimeout(timer)
   }, [content, selected, loading, saving, mtime])
+  useEffect(() => {
+    if (!menu) return
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target
+      if (target instanceof Element && target.closest('.dsdr-files-menu, .dsdr-files-item-menu')) return
+      setMenu(null)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenu(null)
+    }
+    window.addEventListener('pointerdown', closeOutside)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      window.removeEventListener('pointerdown', closeOutside)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [menu])
 
   return (
     <section className="dsdr-files-workspace" aria-label={t('files.title')}>
@@ -2319,7 +2336,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onActivateFile
           {selected ? <div className="dsdr-files-actions"><span className="dsdr-notice">{saving ? t('files.loading') : notice ?? ''}</span></div> : null}
         </div>
       </div>
-      {menu ? <div className="dsdr-files-menu" role="menu" style={{ left: menu.x, top: menu.y }} onPointerLeave={() => setMenu(null)}><button type="button" role="menuitem" onClick={() => { void openSelectedInEditor(menu.path); setMenu(null) }}><span className="dsdr-files-menu-icon">↗</span>Open in editor</button><button type="button" role="menuitem" onClick={() => { void writeClipboard(menu.path); setMenu(null) }}><span className="dsdr-files-menu-icon">⧉</span>Copy path</button><button type="button" role="menuitem" onClick={() => { onAddToChat(menu.path); setMenu(null) }}><span className="dsdr-files-menu-icon">+</span>Add to chat</button></div> : null}
+      {menu ? <div className="dsdr-files-menu" role="menu" style={{ left: menu.x, top: menu.y }}><button type="button" role="menuitem" onClick={() => { void openSelectedInEditor(menu.path); setMenu(null) }}><span className="dsdr-files-menu-icon">↗</span>Open in editor</button><button type="button" role="menuitem" onClick={() => { void writeClipboard(menu.path); setMenu(null) }}><span className="dsdr-files-menu-icon">⧉</span>Copy path</button><button type="button" role="menuitem" onClick={() => { onAddToChat(menu.path); setMenu(null) }}><span className="dsdr-files-menu-icon">+</span>Add to chat</button></div> : null}
     </section>
   )
 }
@@ -3036,6 +3053,23 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       window.removeEventListener('keydown', closeOnEscape)
     }
   }, [newTabMenu])
+  useEffect(() => {
+    if (!reviewFileMenu) return
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target
+      if (target instanceof Element && target.closest('.dsdr-review-file-menu')) return
+      setReviewFileMenu(null)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setReviewFileMenu(null)
+    }
+    window.addEventListener('pointerdown', closeOutside)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      window.removeEventListener('pointerdown', closeOutside)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [reviewFileMenu])
   // Temporary line highlight (jump target from a PR comment or a finding).
   const [jumpLine, setJumpLine] = useState<number | null>(null)
 
@@ -3890,13 +3924,14 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
             </div>
           </div>
         ) : null}
-        {reviewFileMenu ? <div className="dsdr-files-menu" role="menu" style={{ left: reviewFileMenu.x, top: reviewFileMenu.y }} onPointerLeave={() => setReviewFileMenu(null)}><button type="button" role="menuitem" onClick={() => { void openFile(reviewFileMenu.path); setReviewFileMenu(null) }}><span className="dsdr-files-menu-icon">↗</span>Open in editor</button><button type="button" role="menuitem" onClick={() => { void writeClipboard(reviewFileMenu.path); setReviewFileMenu(null) }}><span className="dsdr-files-menu-icon">⧉</span>Copy path</button><button type="button" role="menuitem" onClick={() => { addFileToChat(reviewFileMenu.path); setReviewFileMenu(null) }}><span className="dsdr-files-menu-icon">+</span>Add to chat</button></div> : null}
+        {reviewFileMenu ? <div className="dsdr-files-menu dsdr-review-file-menu" role="menu" style={{ left: reviewFileMenu.x, top: reviewFileMenu.y }}><button type="button" role="menuitem" onClick={() => { void openFile(reviewFileMenu.path); setReviewFileMenu(null) }}><span className="dsdr-files-menu-icon">↗</span>Open in editor</button><button type="button" role="menuitem" onClick={() => { void writeClipboard(reviewFileMenu.path); setReviewFileMenu(null) }}><span className="dsdr-files-menu-icon">⧉</span>Copy path</button><button type="button" role="menuitem" onClick={() => { addFileToChat(reviewFileMenu.path); setReviewFileMenu(null) }}><span className="dsdr-files-menu-icon">+</span>Add to chat</button></div> : null}
         {surface === 'review' ? (
           <div className="dsdr-review-toolbar">
             {tab === 'workspace' && status?.isRepo ? (
               <span className="dsdr-scope">
                 {repos.length > 1 ? <ThemeSelect ariaLabel={t('repo.label')} value={repoPath ?? activeCwd ?? ''} options={repos.map((r) => ({ value: r.path, label: `${baseName(r.path)}${r.branch ? ` (${r.branch})` : ''}` }))} onChange={(v) => { setRepoPath(v); setSelected(null); setReview(null) }} /> : null}
-                <ThemeSelect ariaLabel={t('scope.label')} value={scope} options={SCOPE_OPTIONS.map((s) => ({ value: s.id, label: t(s.label) }))} onChange={(v) => { setScope(v as WorkspaceScope); setSelected(null) }} />
+                <ThemeSelect ariaLabel={t('scope.label')} value={scope} options={SCOPE_OPTIONS.map((s) => ({ value: s.id, label: t(s.label) }))} onChange={(v) => { setScope(v as WorkspaceScope); setSelected(null); setSelectedCommit(null); setSelectedCommitFile(null); setCommitDiff(null) }} />
+                {scope === 'commit' ? <ThemeSelect ariaLabel={t('review.history')} value={selectedCommit?.hash ?? ''} options={[{ value: '', label: t('review.selectCommit') }, ...history.map((commit) => ({ value: commit.hash, label: `${commit.short} · ${commit.subject}` }))]} onChange={(hash) => { const commit = history.find((item) => item.hash === hash); if (commit) selectCommit(commit) }} /> : null}
                 {scope === 'branch' ? <ThemeSelect ariaLabel={t('scope.base')} value={baseBranch ?? ''} options={branches.map((b) => ({ value: b, label: b }))} onChange={setBaseBranch} /> : null}
               </span>
             ) : null}
@@ -3989,6 +4024,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                             role="option"
                             aria-selected={key === selectedKey}
                             className={`dsdr-file${key === selectedKey ? ' dsdr-file-selected' : ''}`}
+                            onContextMenu={(event) => showReviewFileMenu(event, change.path)}
                             onClick={() => {
                               setSelectedRound(round.round)
                               setSelectedPath(change.path)
@@ -4289,6 +4325,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                         role="option"
                         aria-selected={selectedCommitFile === file.path}
                         className={`dsdr-file${selectedCommitFile === file.path ? ' dsdr-file-selected' : ''}`}
+                        onContextMenu={(event) => showReviewFileMenu(event, file.path)}
                         onClick={() => setSelectedCommitFile(file.path)}
                       >
                         <span className="dsdr-chip dsdr-chip-m">{file.status}</span>
