@@ -387,6 +387,10 @@ config:
 5. ~~行内评论只在单栏视图可用~~ **已修**：split 视图左右单元格均可加评论（锚定与
    单栏一致：上下文行两侧同锚、变更行按各自侧）；hover 按钮改 visibility 占位，
    不再导致行高跳动。评论锚定 `(path, lineNew, lineOld)`，行号失效时静默不显示。
+   评论统一存 **repo-relative** 路径：会话 tab 的 change path 来自宿主工具 diff
+   卡片（`args.file_path`，常为绝对路径），保存时客户端先相对化（相对会话 cwd），
+   否则服务器 `sanitizeRepoPath` 会以 400 拒绝。注意：会话 tab 的 hunk 行号是
+   相对计数（见 §七.2），该处评论的行锚与文件真实行号可能不一致。
 6. **`git apply` 的 hunk-only 补丁有坑（已绕开）**：`git apply --reverse` 对
    「变更行位于 hunk 末尾、目标文件在该 hunk 之后还有内容」的补丁会报
    "patch does not apply"（与上下文行数/位置相关，实测确认）。工作区侧丢弃因此

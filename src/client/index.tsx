@@ -2732,10 +2732,17 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const stagedFiles = useMemo(() => files.filter((f) => f.staged), [files])
   const unstagedFiles = useMemo(() => files.filter((f) => !f.staged), [files])
 
-  // "Last turn" scope: paths the agent touched in the most recent round.
+  // "Last turn" scope: paths the agent touched in the most recent round that
+  // actually changed files (the literal last round is often a chat-only turn).
   const lastRoundPaths = useMemo(() => {
     const set = new Set<string>()
-    const last = rounds[rounds.length - 1]
+    let last: SessionRound | null = null
+    for (let i = rounds.length - 1; i >= 0; i--) {
+      if (rounds[i].changes.length > 0) {
+        last = rounds[i]
+        break
+      }
+    }
     if (!last || !cwd) return set
     for (const change of last.changes) {
       set.add(change.path)
@@ -2908,8 +2915,19 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     setCommentText('')
   }
 
+  /**
+   * Comments are stored repo-relative (server rejects absolute paths), but
+   * the session tab's change paths come from the host tool diff cards, which
+   * carry whatever path the agent passed (usually absolute).
+   */
+  const relativePath = (p: string): string => {
+    if (!activeCwd || !isAbsPath(p)) return p
+    if (p.startsWith(activeCwd)) return p.slice(activeCwd.length).replace(/^[\\/]+/, '')
+    return p
+  }
+
   const saveComment = async () => {
-    const commentPath = tab === 'workspace' ? selectedFile?.path : selectedChange?.path
+    const commentPath = relativePath((tab === 'workspace' ? selectedFile?.path : selectedChange?.path) ?? '')
     if (!commentPath || !commentEditor || busy) return
     const text = commentText.trim()
     if (!text) return
