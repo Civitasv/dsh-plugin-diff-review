@@ -110,6 +110,9 @@ const pendingCommentsStore = createSnapshotStore<PendingComments>({
   review: null,
 })
 
+/** Broadcasts a successfully consumed comment batch back to an open review panel. */
+const consumedCommentsStore = createSnapshotStore<{ cwd: string | null; key: number }>({ cwd: null, key: 0 })
+
 /** A one-shot request to put a file reference into a session's composer. */
 const composerDraftStore = createSnapshotStore<{ sessionId: SessionId | null; text: string; key: number }>({
   sessionId: null,
@@ -2818,10 +2821,26 @@ function DiffReviewComposerDock({ sessionId, useSessions, sessions, inputActions
   const carry = () => {
     if (!hasPending || carrying.current) return
     carrying.current = true
-    void injectToSession(sessions, sessionId, composeCarriedMessage()).then((outcome) => {
+    void injectToSession(sessions, sessionId, composeCarriedMessage()).then(async (outcome) => {
+      let cleared = false
+      if (outcome !== 'failed' && cwd && unsentComments.length > 0) {
+        cleared = await saveComments(cwd, [])
+        if (cleared) {
+          pendingCommentsStore.update((d) => {
+            if (d.cwd === cwd) {
+              d.comments = []
+              d.diffs = {}
+            }
+          })
+          consumedCommentsStore.update((d) => {
+            d.cwd = cwd
+            d.key = d.key + 1
+          })
+        }
+      }
       if (outcome !== 'failed') markSent()
       carrying.current = false
-      setCarryFlash(outcome === 'sent' ? t('review.sentToAgent') : outcome === 'copied' ? t('review.copiedFallback') : t('review.sendFailed'))
+      setCarryFlash(outcome === 'sent' ? (cleared || unsentComments.length === 0 ? t('review.sentToAgent') : `${t('review.sentToAgent')} (comments could not be cleared)`) : outcome === 'copied' ? t('review.copiedFallback') : t('review.sendFailed'))
       setTimeout(() => setCarryFlash(null), 3200)
     })
   }
@@ -2922,6 +2941,7 @@ function DiffReviewComposerDock({ sessionId, useSessions, sessions, inputActions
 function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const storeState = useSyncExternalStore(overlayStore.subscribe, overlayStore.getSnapshot)
   const prefs = useSyncExternalStore(prefsStore.subscribe, prefsStore.getSnapshot)
+  const consumedComments = useSyncExternalStore(consumedCommentsStore.subscribe, consumedCommentsStore.getSnapshot)
   // Git-first: land on the workspace tab (staged/unstaged/branch trees) so the
   // change review is one click away; the session tab stays a click away.
   const [tab, setTab] = useState<'session' | 'workspace'>('workspace')
@@ -3101,6 +3121,10 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const cwd = storeState.cwd
   /** Active git repo for workspace operations (multi-repo selector override). */
   const activeCwd = repoPath ?? cwd
+
+  useEffect(() => {
+    if (consumedComments.cwd === activeCwd && consumedComments.key > 0) setComments([])
+  }, [consumedComments, activeCwd])
 
   const loadWorkspace = async (silent = false) => {
     if (!activeCwd) return
