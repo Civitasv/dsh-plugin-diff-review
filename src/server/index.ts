@@ -183,8 +183,9 @@ function formatBytes(n: number): string {
 }
 
 /**
- * Shorten a path for display: keep the tail and ellipsize the head.
- * The result is at most `max` chars (for max >= 1; max <= 1 degrades to '…').
+ * Shorten a path for display: keep the tail and ellipsize the head
+ * (e.g. "…/src/server/index.ts"). The result is at most `max` chars;
+ * `max <= 1` degrades to '…'.
  */
 function shortenPath(path: string, max = 60): string {
   if (max <= 1) return '…'
@@ -300,6 +301,9 @@ async function collectDiff(cwd: string, change: Change): Promise<DiffFile> {
   const unstaged = untracked ? true : change.xy[1] !== ' ' && change.xy[1] !== '?'
   const status = untracked ? '??' : change.xy.trim()
 
+  // Worktree mtime (epoch ms): the client's "Last-turn" scope falls back to it
+  // to catch files changed after the last user message when the session log
+  // holds no diff data (e.g. terminal-driven edits).
   let mtime = 0
   try {
     mtime = statSync(resolve(cwd, change.path)).mtimeMs
@@ -383,6 +387,7 @@ async function resolveBase(cwd: string, raw: string | null): Promise<{ mb: strin
 
 /** Status of the worktree relative to a base branch (merge-base diff). */
 async function collectBaseStatus(cwd: string, base: string): Promise<StatusResponse> {
+  // Validate the base branch and resolve it to its merge-base with HEAD.
   const resolved = await resolveBase(cwd, base)
   if ('error' in resolved) {
     return { isRepo: true, branch: null, upstream: null, ahead: 0, behind: 0, files: [], error: resolved.error }
@@ -407,7 +412,7 @@ async function collectBaseStatus(cwd: string, base: string): Promise<StatusRespo
     try {
       mtime = statSync(resolve(cwd, path)).mtimeMs
     } catch {
-      // ignore
+      // The file may be deleted on the worktree (status 'D') — mtime stays 0.
     }
     files.push({
       path,

@@ -4,9 +4,11 @@
  * Codex-style review with two sources:
  *
  * 1. **会话更改 (Session changes)** — what the agent changed in each round of
- *    this conversation, derived from the conversation snapshot (tool results
- *    carry the host-computed `resultView` diff hunks). Works with or without
- *    git, and shows a change even when no diff text is available (path-only).
+ *    this conversation, derived from the conversation snapshot: each tool
+ *    result that carried file diffs becomes change entries (host-computed
+ *    `resultView` hunks, else call-view/meta diffs, else a path-only entry).
+ *    Works with or without git, and shows a change even when no diff text is
+ *    available (path-only).
  * 2. **工作区 (Workspace)** — the git working tree's uncommitted changes
  *    (staged + unstaged + untracked) with per-file / all-file accept (stage)
  *    and revert (discard) through the plugin's server routes.
@@ -156,6 +158,7 @@ const SIZE_OPTIONS = [11, 12, 13, 14, 16, 18]
 /** Review scopes of the workspace tab (aligned with the Codex review pane). */
 type WorkspaceScope = 'all' | 'unstaged' | 'staged' | 'commit' | 'branch' | 'last-turn'
 
+/** Review-scope dropdown options: each id maps to a locale label in `zh`/`en`. */
 const SCOPE_OPTIONS: { id: WorkspaceScope; label: keyof typeof zh }[] = [
   { id: 'all', label: 'scope.all' },
   { id: 'unstaged', label: 'scope.unstaged' },
@@ -1000,6 +1003,8 @@ const zh = {
   'review.cardJump': '点击在评审面板中定位到对应代码',
   'review.cardOpenFile': '在评审面板中打开该文件',
   'review.cardHint': '点击评论可在评审面板中定位到对应代码',
+  // fallback.*: labels of the built-in image fallback viewer (FallbackUserBubble),
+  // used when a plain user message carries images.
   'fallback.image': '图片',
   'fallback.open': '查看原图',
   'fallback.openNamed': '查看原图 {name}',
@@ -1144,6 +1149,8 @@ const en: Record<keyof typeof zh, string> = {
   'review.cardJump': 'Jump to the matching code in the review panel',
   'review.cardOpenFile': 'Open this file in the review panel',
   'review.cardHint': 'Click a comment to jump to the matching change block',
+  // fallback.*: labels of the built-in image fallback viewer (FallbackUserBubble),
+  // used when a plain user message carries images.
   'fallback.image': 'Image',
   'fallback.open': 'View original',
   'fallback.openNamed': 'View original {name}',
@@ -2016,6 +2023,8 @@ function FileTreeView<T>(props: {
       {nodes.map((node) =>
         node.kind === 'dir' ? (
           <div key={node.path}>
+            {/* Directory row: click toggles this directory's collapse state
+                (collapsed → expand, expanded → collapse). */}
             <button
               type="button"
               className={`dsdr-dir${collapsed.has(node.path) ? '' : ' dsdr-dir-open'}`}

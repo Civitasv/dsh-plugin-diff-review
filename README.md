@@ -19,13 +19,7 @@
 
 ![工作区](docs/screenshots/workspace-real.png)
 
-会话更改 —— 按轮列出代理修改，右侧查看每处 diff（不依赖 git）：
-
-![会话更改](docs/screenshots/session-real.png)
-
-评审卡片 —— 发送出去的评审包在会话里渲染为可点击卡片，点评论直达对应代码：
-
-![评审卡片](docs/screenshots/card-real.png)
+![1786764055351](docs/screenshots/1786764055351.png)
 
 ## 特性
 
@@ -94,16 +88,16 @@ ln -sfn "$PWD" ~/.dsh/profiles/node_modules/dsh-plugin-diff-review
 
 ## 使用
 
-| 操作 | 效果 |
-| --- | --- |
-| 「变动」按钮 | 打开面板（默认工作区页签） |
-| 范围下拉 | 全部 / 未暂存 / 已暂存 / 提交 / 分支 / 最后一轮 |
-| 仓库选择器 | 多仓库时出现，切换后操作针对所选仓库 |
-| 评审 | 按范围调模型，P0–P3 发现 + 结论内联在 diff，可发送给代理 |
-| hunk 操作 | 暂存 / 丢弃 / 取消暂存（只读范围不显示） |
-| 行内评论 | hover 行 `+` 写评论；chip 条点击跳转、顶栏点击发送 |
-| 在编辑器中打开 | diff 头部打开文件；行 hover ↗ 打开该行 |
-| 提交 / 推送 | 输入说明提交已暂存更改；双击确认推送 |
+| 操作           | 效果                                                      |
+| -------------- | --------------------------------------------------------- |
+| 「变动」按钮   | 打开面板（默认工作区页签）                                |
+| 范围下拉       | 全部 / 未暂存 / 已暂存 / 提交 / 分支 / 最后一轮           |
+| 仓库选择器     | 多仓库时出现，切换后操作针对所选仓库                      |
+| 评审           | 按范围调模型，P0–P3 发现 + 结论内联在 diff，可发送给代理 |
+| hunk 操作      | 暂存 / 丢弃 / 取消暂存（只读范围不显示）                  |
+| 行内评论       | hover 行 `+` 写评论；chip 条点击跳转、顶栏点击发送      |
+| 在编辑器中打开 | diff 头部打开文件；行 hover ↗ 打开该行                   |
+| 提交 / 推送    | 输入说明提交已暂存更改；双击确认推送                      |
 
 字体与字号在 **设置 → 插件 → 插件配置 → 变动** 中调整（即时生效并持久化）。
 
@@ -143,8 +137,7 @@ ln -sfn "$PWD" ~/.dsh/profiles/node_modules/dsh-plugin-diff-review
 归入对应轮次，无 diff 时仍列路径与工具名。
 
 **工作区**（服务器端）：`git status --porcelain=v1 -z` + `git ls-files --others`
-收集变更；采纳 = `git add`，丢弃 = `git restore`，取消暂存 = `git restore
---staged`；逐 hunk：index 侧用 `git apply --cached`，工作区侧用 hunk 文本行级
+收集变更；采纳 = `git add`，丢弃 = `git restore`，取消暂存 = `git restore --staged`；逐 hunk：index 侧用 `git apply --cached`，工作区侧用 hunk 文本行级
 替换写回（`git apply --reverse` 对 hunk 不落文件末尾的补丁不可靠）；提交 =
 `git commit -m`，推送 = `git push`；行内评论存于 git-dir 下
 `diff-review-comments.json`；AI 评审 = 按范围收集 diff → 解析模型（配置优先，

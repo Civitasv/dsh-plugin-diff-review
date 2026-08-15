@@ -6,11 +6,11 @@
 export interface DiffFile {
   /** Repo-relative path (rename destination for renames). */
   path: string
-  /** Original path for renames (the source). */
+  /** Path before a rename/copy (the source side); present only for R/C statuses. */
   origPath?: string
   /** Raw porcelain XY pair (e.g. 'MM', 'A ', ' D', '??', 'R '). */
   xy: string
-  /** Human status letter(s): staged + unstaged, e.g. 'M', 'AM', '??'. */
+  /** Display status: the porcelain XY pair with spaces trimmed, e.g. 'M', 'MM', 'A', 'D', 'R', '??'. */
   status: string
   /** Whether the file is untracked. */
   untracked: boolean
