@@ -359,7 +359,24 @@ function userText(node: UserMessageNode): string {
   return parts.join(' ').replace(/\s+/g, ' ').trim()
 }
 
-/** Walk the conversation nodes and group changed files by user round. */
+/**
+ * Fold a file's operation-level snapshots into the net change for its user
+ * round. Tool cards persist whole-file old/new texts, so rendering every
+ * snapshot would repeat earlier edits when a later write includes them.
+ */
+function mergeRoundChange(existing: RoundChange, incoming: RoundChange): void {
+  if (!incoming.hasDiff) return
+  const first = existing.hunks[0]
+  const last = incoming.hunks.at(-1)
+  if (!last) return
+  existing.hunks = [{ oldText: first?.oldText ?? last.oldText, newText: last.newText }]
+  existing.hasDiff = true
+  // Keep the latest tool label for diagnostics when a turn used more than one
+  // mutation tool on the same file.
+  existing.tool = incoming.tool
+}
+
+/** Walk the conversation nodes and group each file's net change by user round. */
 export function collectSessionRounds(nodes: readonly ConversationNode[]): SessionRound[] {
   const rounds: SessionRound[] = []
   let current: SessionRound | null = null
@@ -377,13 +394,14 @@ export function collectSessionRounds(nodes: readonly ConversationNode[]): Sessio
       rounds.push(current)
     }
     for (const change of changesFromToolResult(node.call, node)) {
-      const existing = current.changes.find((c) => c.path === change.path && c.tool === change.tool)
+      const existing = current.changes.find((c) => c.path === change.path)
       if (existing) {
-        if (change.hasDiff) {
-          existing.hunks.push(...change.hunks)
-          existing.hasDiff = true
-        }
+        mergeRoundChange(existing, change)
       } else {
+        // Normalize multiple cards for one file in a single tool result too.
+        if (change.hasDiff && change.hunks.length > 1) {
+          change.hunks = [{ oldText: change.hunks[0].oldText, newText: change.hunks.at(-1)!.newText }]
+        }
         current.changes.push(change)
       }
     }

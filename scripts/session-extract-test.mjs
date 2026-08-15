@@ -87,6 +87,16 @@ function changesFromToolResult(call, node) {
   return path ? [{ path, tool, hunks: [], hasDiff: false }] : []
 }
 
+function mergeRoundChange(existing, incoming) {
+  if (!incoming.hasDiff) return
+  const first = existing.hunks[0]
+  const last = incoming.hunks.at(-1)
+  if (!last) return
+  existing.hunks = [{ oldText: first?.oldText ?? last.oldText, newText: last.newText }]
+  existing.hasDiff = true
+  existing.tool = incoming.tool
+}
+
 function collectSessionRounds(nodes) {
   const rounds = []
   let current = null
@@ -102,13 +112,13 @@ function collectSessionRounds(nodes) {
       rounds.push(current)
     }
     for (const change of changesFromToolResult(node.call, node)) {
-      const existing = current.changes.find((c) => c.path === change.path && c.tool === change.tool)
+      const existing = current.changes.find((c) => c.path === change.path)
       if (existing) {
-        if (change.hasDiff) {
-          existing.hunks.push(...change.hunks)
-          existing.hasDiff = true
-        }
+        mergeRoundChange(existing, change)
       } else {
+        if (change.hasDiff && change.hunks.length > 1) {
+          change.hunks = [{ oldText: change.hunks[0].oldText, newText: change.hunks.at(-1).newText }]
+        }
         current.changes.push(change)
       }
     }
@@ -180,16 +190,27 @@ const nodeMeta = {
 rounds = collectSessionRounds([{ kind: 'user', content: [] }, nodeMeta])
 check('meta.diffs fallback', rounds.length === 1 && rounds[0].changes.length === 1 && rounds[0].changes[0].path === 'd.ts')
 
-// 5. nothing known -> skipped entirely
+// 5. A file written more than once in one turn renders its net change once.
+const nodeSecondWrite = {
+  kind: 'tool-result',
+  call: { name: 'write', argsRaw: '{"file_path":"a.ts"}' },
+  resultView: { card: 'diff', diffs: [{ path: 'a.ts', oldText: 'one\ntwo\n', newText: 'one\ntwo\nthree\n' }] },
+  callView: null,
+  meta: null,
+}
+rounds = collectSessionRounds([{ kind: 'user', content: [] }, nodeResultDiff, nodeSecondWrite])
+check('same-file writes collapse to one net hunk', rounds[0].changes.length === 1 && rounds[0].changes[0].hunks.length === 1 && rounds[0].changes[0].hunks[0].oldText === 'one\n' && rounds[0].changes[0].hunks[0].newText === 'one\ntwo\nthree\n')
+
+// 6. nothing known -> skipped entirely
 const nodeBash = { kind: 'tool-result', call: { name: 'bash', argsRaw: '{"command":"echo hi"}' }, callView: null, resultView: null, meta: null }
 rounds = collectSessionRounds([{ kind: 'user', content: [] }, nodeBash])
 check('unrelated tool skipped', rounds.length === 0)
 
-// 6. count (badge) counts distinct tool:path, including truncated calls
+// 7. count (badge) counts distinct tool:path, including truncated calls
 const count = countSessionChanges([{ kind: 'user', content: [] }, nodeResultDiff, nodeTruncated, nodePathOnly, nodeBash])
 check('count distinct tool:path', count === 3, String(count))
 
-// 7. window starts mid-turn: tool results before any user node still surface
+// 8. window starts mid-turn: tool results before any user node still surface
 // under an implicit round
 const midTurn = collectSessionRounds([nodeResultDiff, nodeTruncated])
 check('implicit round for leading tool results', midTurn.length === 1 && midTurn[0].changes.length === 2, JSON.stringify(midTurn.map((r) => r.changes.map((c) => c.path))))
