@@ -300,6 +300,9 @@ export interface FilesListResponse {
 export interface FileReadResponse {
   ok: boolean
   path?: string
+  kind?: 'text' | 'image' | 'binary'
+  mime?: string
+  dataUrl?: string
   content?: string
   mtime?: number
   error?: string

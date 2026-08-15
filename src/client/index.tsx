@@ -950,6 +950,7 @@ const REVIEW_CSS = `
 .dsdr-code-editor{display:flex;min-height:0;flex:1;background:var(--dsw-alias-bg-layer-1);overflow:hidden}.dsdr-code-lines{flex:none;width:48px;box-sizing:border-box;overflow:hidden;padding:12px 8px 12px 0;border-right:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-tertiary);font:12px/20px var(--dsw-font-mono);text-align:right;user-select:none}.dsdr-code-lines span{display:block;height:20px}
 .dsdr-code-layer{position:relative;min-width:0;min-height:0;flex:1;overflow:hidden}.dsdr-code-highlight,.dsdr-files-text{box-sizing:border-box;position:absolute;inset:0;margin:0;padding:12px 14px;border:0;font:12px/20px var(--dsw-font-mono);tab-size:2;white-space:pre;overflow:auto}.dsdr-code-highlight{pointer-events:none;color:var(--dsw-alias-label-primary);background:transparent}.dsdr-files-text{resize:none;background:transparent;color:transparent;caret-color:var(--dsw-alias-label-primary);outline:0;-webkit-text-fill-color:transparent}.dsdr-files-text::selection{background:rgba(91,140,255,.35)}
 .dsdr-code-keyword{color:#c586c0}.dsdr-code-string{color:#ce9178}.dsdr-code-comment{color:#6a9955}.dsdr-code-number{color:#b5cea8}.dsdr-code-plain{color:var(--dsw-alias-label-primary)}
+.dsdr-image-preview{display:flex;align-items:center;justify-content:center;min-height:0;flex:1;overflow:auto;padding:24px;background:var(--dsw-alias-bg-layer-1)}.dsdr-image-preview img{max-width:100%;max-height:100%;object-fit:contain;box-shadow:var(--dsw-shadow-lv2)}.dsdr-files-unavailable{display:flex;align-items:center;justify-content:center;min-height:0;flex:1;color:var(--dsw-alias-label-tertiary);font-size:13px}
 .dsdr-files-actions{display:flex;align-items:center;gap:6px;padding:8px 10px;border-top:1px solid var(--dsw-alias-border-l1)}
 /* --- fallback user bubble (native look) --- */
 .dsdr-fallback-user{flex-direction:column;align-items:flex-end;gap:6px;display:flex}
@@ -2096,6 +2097,8 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir }: { cwd: string; t: Ca
   const [filter, setFilter] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
   const [content, setContent] = useState('')
+  const [fileKind, setFileKind] = useState<'text' | 'image' | 'binary'>('text')
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [mtime, setMtime] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -2124,7 +2127,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir }: { cwd: string; t: Ca
     try {
       const res = await fetch(`${FILES_URL}?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(path)}`, { headers: { accept: 'application/json' } })
       const data = (await res.json()) as FileReadResponse
-      if (data.ok) { const next = data.content ?? ''; savedContent.current = next; setContent(next); setMtime(data.mtime ?? null) } else setNotice(data.error ?? 'Failed to read file')
+      if (data.ok) { const next = data.content ?? ''; savedContent.current = next; setContent(next); setFileKind(data.kind ?? 'text'); setImageUrl(data.dataUrl ?? null); setMtime(data.mtime ?? null) } else setNotice(data.error ?? 'Failed to read file')
     } catch { setNotice('Failed to read file') } finally { setLoading(false) }
   }
   const save = async () => {
@@ -2158,7 +2161,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir }: { cwd: string; t: Ca
         </div>
         <div className="dsdr-files-editor">
           <div className="dsdr-files-path">{selected ?? (loading ? t('files.loading') : '')}</div>
-          {selected ? (
+          {selected && fileKind === 'text' ? (
             <div className="dsdr-code-editor">
               <div className="dsdr-code-lines" aria-hidden="true">{content.split('\n').map((_, index) => <span key={index}>{index + 1}</span>)}</div>
               <div className="dsdr-code-layer">
@@ -2167,6 +2170,8 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir }: { cwd: string; t: Ca
               </div>
             </div>
           ) : null}
+          {selected && fileKind === 'image' && imageUrl ? <div className="dsdr-image-preview"><img src={imageUrl} alt={selected} /></div> : null}
+          {selected && fileKind === 'binary' ? <div className="dsdr-files-unavailable">此二进制文件不可预览</div> : null}
           {selected ? <div className="dsdr-files-actions"><span className="dsdr-notice">{saving ? t('files.loading') : notice ?? ''}</span></div> : null}
         </div>
       </div>

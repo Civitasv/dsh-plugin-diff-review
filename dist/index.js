@@ -957,7 +957,13 @@ function readQuery(req) {
 }
 var MAX_FILES_LIST = 2e3;
 var MAX_FILE_BYTES = 1024 * 1024;
+var MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 var SKIPPED_FILE_DIRS = /* @__PURE__ */ new Set([".git", "node_modules", ".DS_Store"]);
+var IMAGE_MIME = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml" };
+function extension(path) {
+  const dot = path.lastIndexOf(".");
+  return dot >= 0 ? path.slice(dot).toLowerCase() : "";
+}
 function resolveWorkspaceFile(cwd, raw) {
   const safe = sanitizeRepoPath(raw);
   if ("error" in safe) return safe;
@@ -1013,9 +1019,17 @@ function filesAction(config, method, query, record) {
     if ("error" in target) return { status: 400, body: { ok: false, error: target.error } };
     try {
       const stat = statSync(target.abs);
-      if (!stat.isFile() || stat.size > MAX_FILE_BYTES) return { status: 400, body: { ok: false, error: "file is not editable text or exceeds 1MB" } };
-      const content = readFileSync(target.abs, "utf8");
-      return { status: 200, body: { ok: true, path: target.path, content, mtime: stat.mtimeMs } };
+      if (!stat.isFile()) return { status: 400, body: { ok: false, error: "not a file" } };
+      const mime = IMAGE_MIME[extension(target.path)];
+      if (mime) {
+        if (stat.size > MAX_IMAGE_BYTES) return { status: 400, body: { ok: false, error: "image exceeds 5MB preview limit" } };
+        const data2 = readFileSync(target.abs);
+        return { status: 200, body: { ok: true, path: target.path, kind: "image", mime, dataUrl: "data:" + mime + ";base64," + data2.toString("base64"), mtime: stat.mtimeMs } };
+      }
+      if (stat.size > MAX_FILE_BYTES) return { status: 400, body: { ok: false, error: "file exceeds 1MB text preview limit" } };
+      const data = readFileSync(target.abs);
+      if (data.includes(0)) return { status: 200, body: { ok: true, path: target.path, kind: "binary", mtime: stat.mtimeMs } };
+      return { status: 200, body: { ok: true, path: target.path, kind: "text", content: data.toString("utf8"), mtime: stat.mtimeMs } };
     } catch (e) {
       return { status: 404, body: { ok: false, error: e instanceof Error ? e.message : "file not found" } };
     }
