@@ -3762,8 +3762,8 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
           }
         /> : null}
         <div className="dsdr-header">
-          <span className="dsdr-title">{t('review.title')}</span>
           <div className="dsdr-tabs" role="tablist" aria-label={t('review.title')}>
+            <button type="button" role="tab" aria-selected={surface === 'review'} className={`dsdr-tab dsdr-review-tab${surface === 'review' ? ' dsdr-tab-active' : ''}`} onClick={() => setSurface('review')}>{t('review.title')}</button>
             {openFileTabs.map((path) => (
               <button key={path} type="button" role="tab" aria-selected={surface === path} className={`dsdr-tab dsdr-file-tab${surface === path ? ' dsdr-tab-active' : ''}`} onClick={() => { setSurface(path); setFilesTarget(path) }} title={path}>
                 <FileTreeGlyph path={path} /><span>{baseName(path)}</span><span role="button" className="dsdr-file-tab-close" aria-label={`Close ${baseName(path)}`} onClick={(event) => { event.stopPropagation(); closeFilesTab(path) }}><IconX /></span>
