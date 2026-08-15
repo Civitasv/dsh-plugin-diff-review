@@ -849,8 +849,8 @@ const REVIEW_CSS = `
 .dsdr-line-hunk{background:var(--dsw-alias-fill-l2);color:var(--dsw-alias-label-tertiary)}
 .dsdr-line-file{color:var(--dsw-alias-label-tertiary)}
 .dsdr-line-note{color:var(--dsw-alias-label-tertiary);font-style:italic}
-.dsdr-hunk-bar{display:flex;align-items:center;gap:6px;padding:2px 16px;border-top:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-fill-l2)}
-.dsdr-hunk-bar .dsdr-btn{min-height:22px;padding:1px 8px;font-size:11px;line-height:16px}
+.dsdr-hunk-bar{display:flex;align-items:center;gap:5px;padding:4px 12px;border-top:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-fill-l2)}
+.dsdr-hunk-action{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:50%;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);font:18px/1 var(--dsw-font-sans);cursor:pointer}.dsdr-hunk-action:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.dsdr-hunk-action-stage:hover{color:var(--dsw-alias-state-success-primary)}.dsdr-hunk-action-revert:hover{color:var(--dsw-alias-status-danger)}.dsdr-hunk-action:disabled{cursor:default;opacity:.45}
 .dsdr-hunk-layer{font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono);margin-right:auto}
 .dsdr-foot{display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--dsw-alias-border-l1);flex:none;min-height:36px}
 .dsdr-notice{font-size:12px;color:var(--dsw-alias-label-secondary)}
@@ -1409,18 +1409,10 @@ function HunkToolbar({
   return (
     <div className="dsdr-hunk-bar">
       <span className="dsdr-hunk-layer">{staged ? t('hunk.staged') : t('hunk.unstaged')}</span>
-      {staged ? (
-        <button type="button" className="dsdr-btn" disabled={busy} onClick={() => onAction('unstage', hunk)}>
-          {t('hunk.unstage')}
-        </button>
-      ) : (
-        <button type="button" className="dsdr-btn dsdr-btn-primary" disabled={busy} onClick={() => onAction('accept', hunk)}>
-          {t('hunk.stage')}
-        </button>
-      )}
-      <button type="button" className="dsdr-btn dsdr-btn-danger" disabled={busy} onClick={() => onAction('revert', hunk)}>
-        {t('hunk.revert')}
+      <button type="button" className="dsdr-hunk-action dsdr-hunk-action-stage" title={staged ? t('hunk.unstage') : t('hunk.stage')} aria-label={staged ? t('hunk.unstage') : t('hunk.stage')} disabled={busy} onClick={() => onAction(staged ? 'unstage' : 'accept', hunk)}>
+        {staged ? '−' : '+'}
       </button>
+      <button type="button" className="dsdr-hunk-action dsdr-hunk-action-revert" title={t('hunk.revert')} aria-label={t('hunk.revert')} disabled={busy} onClick={() => onAction('revert', hunk)}>↶</button>
     </div>
   )
 }
