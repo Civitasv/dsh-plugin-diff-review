@@ -6,6 +6,35 @@
 
 ## 安装
 
+### GitHub 安装
+
+DSH 的 `plugin add` 支持 pnpm 的 GitHub 依赖格式。推荐固定到发布 tag，避免后续
+`main` 的更新改变已安装版本：
+
+```sh
+dsh plugin --profile web add github:Civitasv/dsh-plugin-diff-review#<tag>
+```
+
+需要跟随最新版本时，改用：
+
+```sh
+dsh plugin --profile web add github:Civitasv/dsh-plugin-diff-review#main
+```
+
+`plugin add` 只负责将包安装到 web profile。首次安装还要在
+`~/.dsh/profiles/web/cordis.patch.yml` 增加：
+
+```yaml
+- insert:
+    - id: diff-review
+      name: dsh-plugin-diff-review
+```
+
+随后重启 DSH。更新时重新执行同一条 `plugin add` 命令；使用 tag 时将版本替换为目标
+tag。
+
+### 本地开发安装
+
 ```sh
 # macOS / Linux
 bash install.sh
@@ -14,7 +43,7 @@ bash install.sh
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-安装后重启 DSH。
+脚本适合本地开发，会将当前目录链接到 profile；安装后重启 DSH。
 
 ## 查看改动
 
