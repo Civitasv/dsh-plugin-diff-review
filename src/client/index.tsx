@@ -2245,12 +2245,11 @@ function UserReviewNodeView(props: UserReviewNodeProps) {
 
 type DiffReviewComposerDockProps = PropsRuntime<'conversation.input.dock'> & PropsLocale<'diff-review'> & { sessions: ISessions }
 
-function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, input, t }: DiffReviewComposerDockProps) {
+function DiffReviewComposerDock({ sessionId, useSessions, sessions, t }: DiffReviewComposerDockProps) {
   const cwd = useSessions((s: SessionListState) => s.byId[sessionId]?.cwd)
   const pending = useSyncExternalStore(pendingCommentsStore.subscribe, pendingCommentsStore.getSnapshot)
   const [dismissed, setDismissed] = useState(false)
   const [carryFlash, setCarryFlash] = useState<string | null>(null)
-  const carriedIds = useRef<string | null>(null)
   const carrying = useRef(false)
 
   // Seed the store from server storage when nothing has been synced for this
@@ -2324,9 +2323,6 @@ function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, 
     return lines.join('\n').slice(0, 16000)
   }
 
-  // Codex-style auto-carry: when the user submits a message while comments are
-  // pending, steer the full review package into the turn right behind it — the
-  // agent handles it on its next step, with no queued-item strip above the input.
   /** Mark the carried items as sent so they are never re-sent (persisted per cwd). */
   const markSent = () => {
     if (!cwd) return
@@ -2340,12 +2336,7 @@ function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, 
     })
   }
 
-  const phase = input?.phase
-  const running = useSession((s) => s.running)
-  const userCount = useSession((s) => s.nodes.filter((n) => n.kind === 'user').length)
-  const prevRunning = useRef(running)
-  const prevUserCount = useRef(userCount)
-  /** Send the pending review package now (dock button or auto-carry). */
+  /** Send the pending review package now (explicit click only — never auto-carried). */
   const carry = () => {
     if (!hasPending || carrying.current) return
     carrying.current = true
@@ -2356,18 +2347,6 @@ function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, 
       setTimeout(() => setCarryFlash(null), 3200)
     })
   }
-
-  useEffect(() => {
-    const turnStarted = prevRunning.current === false && running === true
-    prevRunning.current = running
-    const newUserMsg = prevUserCount.current < userCount
-    prevUserCount.current = userCount
-    const phaseHit = phase === 'submitting' || phase === 'adjudicating'
-    if (!hasPending) return
-    if (!turnStarted && !newUserMsg && !phaseHit) return
-    carry()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, userCount, phase, hasPending])
 
   if (!cwd || (!hasPending && !carryFlash) || dismissed) return null
 
