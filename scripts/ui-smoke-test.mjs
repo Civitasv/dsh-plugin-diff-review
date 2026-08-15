@@ -164,6 +164,32 @@ async function main() {
 
     check('opens review dock', await click('.dsdr-trigger') && await waitFor(`!!document.querySelector('.dsdr-panel-docked')`, 'review dock visible'))
 
+    const reviewResizeResult = await evaluate(`(async () => {
+      const list = document.querySelector('.dsdr-body > .dsdr-files')
+      const handle = document.querySelector('.dsdr-body > .dsdr-file-tree-resize:not(.dsdr-file-tree-resize-overlay)')
+      if (!(list instanceof HTMLElement) || !(handle instanceof HTMLElement)) return { error: 'missing-elements' }
+      const before = list.getBoundingClientRect()
+      const handleRect = handle.getBoundingClientRect()
+      const x = handleRect.left + handleRect.width / 2
+      const y = handleRect.top + Math.min(40, handleRect.height / 2)
+      const hit = document.elementFromPoint(x, y)
+      const cursor = getComputedStyle(handle).cursor
+      handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: x, clientY: y, pointerId: 1, buttons: 1 }))
+      window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: x - 40, clientY: y, pointerId: 1, buttons: 1 }))
+      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: x - 40, clientY: y, pointerId: 1 }))
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      const after = list.getBoundingClientRect()
+      return {
+        hitHandle: hit === handle || hit?.closest('.dsdr-file-tree-resize') === handle,
+        cursor,
+        beforeWidth: before.width,
+        afterWidth: after.width,
+      }
+    })()`)
+    check('Changes boundary hits its resize handle', reviewResizeResult?.hitHandle === true, JSON.stringify(reviewResizeResult))
+    check('Changes boundary shows the resize cursor', reviewResizeResult?.cursor === 'col-resize', reviewResizeResult?.cursor ?? 'missing')
+    check('dragging the Changes boundary resizes the tree', Math.abs((reviewResizeResult?.afterWidth ?? 0) - (reviewResizeResult?.beforeWidth ?? 0)) >= 30, JSON.stringify(reviewResizeResult))
+
     check('hides file tree', await click('[aria-label="Hide file tree"]') && await waitFor(`document.querySelector('.dsdr-panel')?.classList.contains('dsdr-panel-tree-hidden')`, 'tree hidden'))
     check('shows file tree again', await click('[aria-label="Show file tree"]') && await waitFor(`!document.querySelector('.dsdr-panel')?.classList.contains('dsdr-panel-tree-hidden')`, 'tree shown'))
 
@@ -179,6 +205,33 @@ async function main() {
     await click('.dsdr-new-tab-btn')
     const openedFiles = await evaluate(`(() => { const item = document.querySelector('.dsdr-new-tab-menu [role=menuitem]'); if (!item) return false; item.click(); return true })()`)
     check('opens Files browser tab', openedFiles && await waitFor(`!!document.querySelector('.dsdr-files-workspace .dsdr-files-search')`, 'Files browser visible', 30_000))
+
+    const filesResizeResult = await evaluate(`(async () => {
+      const list = document.querySelector('.dsdr-files-workspace .dsdr-files-list')
+      const handle = document.querySelector('.dsdr-files-workspace .dsdr-file-tree-resize')
+      if (!(list instanceof HTMLElement) || !(handle instanceof HTMLElement)) return { error: 'missing-elements' }
+      const before = list.getBoundingClientRect()
+      const handleRect = handle.getBoundingClientRect()
+      const x = handleRect.left + handleRect.width / 2
+      const y = handleRect.top + Math.min(40, handleRect.height / 2)
+      const hit = document.elementFromPoint(x, y)
+      const cursor = getComputedStyle(handle).cursor
+      handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: x, clientY: y, pointerId: 1, buttons: 1 }))
+      window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: x - 40, clientY: y, pointerId: 1, buttons: 1 }))
+      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: x - 40, clientY: y, pointerId: 1 }))
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      const after = list.getBoundingClientRect()
+      return {
+        handleWidth: handleRect.width,
+        hitHandle: hit === handle || hit?.closest('.dsdr-file-tree-resize') === handle,
+        cursor,
+        beforeWidth: before.width,
+        afterWidth: after.width,
+      }
+    })()`)
+    check('Files browser boundary hits the resize handle', filesResizeResult?.hitHandle === true, JSON.stringify(filesResizeResult))
+    check('Files browser boundary shows the resize cursor', filesResizeResult?.cursor === 'col-resize', filesResizeResult?.cursor ?? 'missing')
+    check('dragging the Files browser boundary resizes the tree', Math.abs((filesResizeResult?.afterWidth ?? 0) - (filesResizeResult?.beforeWidth ?? 0)) >= 30, JSON.stringify(filesResizeResult))
 
     const treeResult = await evaluate(`(() => {
       const tree = document.querySelector('.dsdr-arborist [role=tree]')

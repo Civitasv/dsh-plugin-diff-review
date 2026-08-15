@@ -703,6 +703,8 @@ function changeSplitBlocks(change: RoundChange): SplitBlock[] {
 // Styles (dsdr-*; the header trigger mirrors the in-tree action rows).
 // ---------------------------------------------------------------------------
 
+const FILE_TREE_RESIZE_HIT_AREA_PX = 12
+
 const REVIEW_CSS = `
 .dsdr-trigger{min-height:28px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:0;border-radius:6px;align-items:center;gap:4px;padding:3px 6px;font:inherit;font-size:12px;line-height:18px;display:inline-flex}
 .dsdr-trigger:hover,.dsdr-trigger:focus-visible{color:var(--dsw-alias-label-secondary)}
@@ -710,7 +712,7 @@ const REVIEW_CSS = `
 .dsdr-count{background:var(--dsw-alias-fill-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;min-width:16px;text-align:center;font-size:11px;line-height:16px;padding:0 5px;font-variant-numeric:tabular-nums}
 .dsdr-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:32px}.dsdr-overlay-docked{justify-content:flex-end;padding:0;background:transparent}.dsdr-overlay-docked .dsdr-panel{pointer-events:auto}
 .dsdr-panel{box-sizing:border-box;position:relative;width:min(1120px,100%);height:min(720px,calc(100vh - 64px));max-width:calc(100vw - 64px);max-height:calc(100vh - 64px);background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;box-shadow:var(--dsw-shadow-lv3);display:flex;flex-direction:column;overflow:hidden}
-.dsdr-panel-docked{height:100vh!important;max-width:calc(100vw - 56px);max-height:none;border-width:0 0 0 1px;border-radius:0;box-shadow:var(--dsw-shadow-lv3)}.dsdr-panel-docked .dsdr-body{flex-direction:row-reverse}.dsdr-panel-docked .dsdr-files{border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-panel-docked .dsdr-file-tree-resize{margin-left:-2px;margin-right:-3px}.dsdr-panel-docked .dsdr-resize-e{left:-4px;right:auto;cursor:ew-resize}.dsdr-files-content-docked>.dsdr-files-list{grid-column:3;border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-files-content-docked>.dsdr-file-tree-resize{grid-column:2}.dsdr-files-content-docked>.dsdr-files-editor{grid-column:1;grid-row:1}
+.dsdr-panel-docked{height:100vh!important;max-width:calc(100vw - 56px);max-height:none;border-width:0 0 0 1px;border-radius:0;box-shadow:var(--dsw-shadow-lv3)}.dsdr-panel-docked .dsdr-body{flex-direction:row-reverse}.dsdr-panel-docked .dsdr-files{border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-panel-docked .dsdr-file-tree-resize{margin-left:-2px;margin-right:-3px}.dsdr-panel-docked .dsdr-resize-e{left:-4px;right:auto;cursor:ew-resize}.dsdr-files-content-docked>.dsdr-files-list{grid-column:2;border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-files-content-docked>.dsdr-file-tree-resize-overlay{left:auto;right:var(--dsdr-file-tree-width);margin:0;transform:translateX(50%)}.dsdr-files-content-docked>.dsdr-files-editor{grid-column:1;grid-row:1}
 .dsdr-panel-tree-hidden .dsdr-body>.dsdr-files,.dsdr-panel-tree-hidden .dsdr-body>.dsdr-file-tree-resize,.dsdr-panel-tree-hidden .dsdr-files-content>.dsdr-files-list,.dsdr-panel-tree-hidden .dsdr-files-content>.dsdr-file-tree-resize{display:none}.dsdr-panel-tree-hidden .dsdr-files-content{grid-template-columns:minmax(0,1fr)!important}
 .dsdr-resize{position:absolute;z-index:5}
 .dsdr-resize-e{top:0;right:-3px;width:7px;height:100%;cursor:ew-resize}
@@ -793,7 +795,7 @@ const REVIEW_CSS = `
 .dsdr-cfg-actions{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:12px 0 4px;display:flex}
 .dsdr-body{display:flex;flex:1;min-height:0}
 .dsdr-files{flex:none;border-right:1px solid var(--dsw-alias-border-l1);overflow-y:auto;padding:8px}
-.dsdr-file-tree-resize{position:relative;z-index:2;flex:none;width:5px;margin-left:-3px;margin-right:-2px;cursor:col-resize;touch-action:none}.dsdr-file-tree-resize::after{content:"";position:absolute;inset:0 1px;background:transparent}.dsdr-file-tree-resize:hover::after,.dsdr-file-tree-resize:active::after{background:var(--dsw-alias-brand-primary)}
+.dsdr-file-tree-resize{position:relative;z-index:2;flex:none;width:${FILE_TREE_RESIZE_HIT_AREA_PX}px;margin-left:-3px;margin-right:-2px;cursor:col-resize;touch-action:none}.dsdr-file-tree-resize-overlay{position:absolute;z-index:3;top:0;bottom:0;left:var(--dsdr-file-tree-width);margin:0;transform:translateX(-50%)}.dsdr-file-tree-resize::after{content:"";position:absolute;inset:0 calc(50% - .5px);background:transparent}.dsdr-file-tree-resize:hover::after,.dsdr-file-tree-resize:active::after{background:var(--dsw-alias-brand-primary)}
 .dsdr-round{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);padding:8px 8px 3px;font-weight:600}
 .dsdr-round-label{white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-weight:400;color:var(--dsw-alias-label-secondary)}
 .dsdr-file{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;border-radius:8px;padding:6px 8px;cursor:pointer;border:0;background:transparent;text-align:left;font:inherit;color:var(--dsw-alias-label-primary)}
@@ -994,7 +996,7 @@ const REVIEW_CSS = `
 .dsdr-files-workspace{display:flex;min-height:0;flex:1;flex-direction:column;background:var(--dsw-alias-bg-module-platform)}
 .dsdr-files-search{width:100%;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);padding:7px 10px;font:inherit;font-size:12px;line-height:18px}
 .dsdr-files-search:focus{outline:none;border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-brand-primary) 15%,transparent)}
-.dsdr-files-content{display:grid;min-height:0;flex:1;overflow:hidden}
+.dsdr-files-content{position:relative;display:grid;min-height:0;flex:1;overflow:hidden}
 .dsdr-files-list{display:flex;min-height:0;overflow:hidden;flex-direction:column;border-right:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}.dsdr-files-tree-toolbar{flex:none;padding:9px 8px 7px;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform)}.dsdr-files-tree-body{position:relative;min-height:0;flex:1;padding:8px 6px}.dsdr-arborist{width:100%}.dsdr-arborist-fill{height:100%}.dsdr-arborist [role=tree]{overscroll-behavior:contain}.dsdr-arborist [role=row]{width:100%}.dsdr-arborist [role=row]::before{content:"";position:absolute;left:7px;top:-5px;bottom:-5px;width:1px;background:var(--dsw-alias-border-l1);opacity:.8;pointer-events:none}
 .dsdr-files-item{display:flex;align-items:center;width:100%;height:100%;box-sizing:border-box;border:0;border-radius:7px;background:transparent;padding:0 8px;color:var(--dsw-alias-label-secondary);font:12px/20px var(--dsw-font-mono);text-align:left;cursor:pointer;min-width:0}
 .dsdr-files-item-main{display:flex;align-items:center;gap:7px;min-width:0;flex:1;height:100%;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;padding:0;position:relative;z-index:1}.dsdr-files-item-name{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.dsdr-files-item:hover,.dsdr-files-item-active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.dsdr-files-item-active{position:relative;background:transparent}.dsdr-files-item-active::before{content:"";position:absolute;z-index:0;inset:-5px 0;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);box-shadow:inset 2px 0 0 var(--dsw-alias-brand-primary);pointer-events:none}.dsdr-files-item-menu{position:relative;z-index:1;flex:none;display:flex;align-items:center;justify-content:center;width:20px;height:20px;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;opacity:0}.dsdr-files-item:hover .dsdr-files-item-menu,.dsdr-files-item-menu:focus-visible{opacity:1}.dsdr-files-item-menu:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dsdr-tree-file-icon{display:grid;place-items:center;flex:none;width:17px;height:17px;border-radius:5px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-brand-primary);font:700 9px/1 var(--dsw-font-sans)}.dsdr-tree-file-icon-image{color:var(--dsw-alias-state-success-primary)}.dsdr-tree-file-icon-code{color:var(--dsw-alias-brand-primary)}
@@ -2288,8 +2290,8 @@ function CodeEditor({ path, value, onChange }: { path: string; value: string; on
   return <div ref={hostRef} className="dsdr-cm-host" />
 }
 
-function FileTreeResizeHandle({ width, onResize, reverse = false }: { width: number; onResize: (width: number) => void; reverse?: boolean }) {
-  return <div className="dsdr-file-tree-resize" role="separator" aria-orientation="vertical" aria-label="Resize file tree" onPointerDown={(event) => {
+function FileTreeResizeHandle({ width, onResize, reverse = false, overlay = false }: { width: number; onResize: (width: number) => void; reverse?: boolean; overlay?: boolean }) {
+  return <div className={`dsdr-file-tree-resize${overlay ? ' dsdr-file-tree-resize-overlay' : ''}`} role="separator" aria-orientation="vertical" aria-label="Resize file tree" onPointerDown={(event) => {
     event.preventDefault()
     const startX = event.clientX
     const startWidth = width
@@ -2393,7 +2395,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onActivateFile
 
   return (
     <section className="dsdr-files-workspace" aria-label={t('files.title')}>
-      <div className={`dsdr-files-content${docked ? ' dsdr-files-content-docked' : ''}`} style={{ gridTemplateColumns: docked ? `minmax(0, 1fr) 5px ${treeWidth}px` : `${treeWidth}px 5px minmax(0, 1fr)` }}>
+      <div className={`dsdr-files-content${docked ? ' dsdr-files-content-docked' : ''}`} style={{ '--dsdr-file-tree-width': `${treeWidth}px`, gridTemplateColumns: docked ? `minmax(0, 1fr) ${treeWidth}px` : `${treeWidth}px minmax(0, 1fr)` } as CSSProperties}>
         <div className="dsdr-files-list">
           <div className="dsdr-files-tree-toolbar"><input className="dsdr-files-search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={t('files.search')} autoFocus /></div>
           <div className="dsdr-files-tree-body">
@@ -2414,7 +2416,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onActivateFile
             {!loading && shown.length === 0 ? <div className="dsdr-empty">{t('files.empty')}</div> : null}
           </div>
         </div>
-        <FileTreeResizeHandle width={treeWidth} onResize={onTreeWidthChange} reverse={docked} />
+        <FileTreeResizeHandle width={treeWidth} onResize={onTreeWidthChange} reverse={docked} overlay />
         <div className="dsdr-files-editor">
           <div className="dsdr-files-path">{selected ? <><FileTreeGlyph path={selected} /><span className="dsdr-files-path-text" title={selected}>{selected}</span></> : <span>{loading ? t('files.loading') : t('files.title')}</span>}<span className="dsdr-files-path-spacer" /><button type="button" className="dsdr-btn" title={t('files.openEditor')} onClick={() => void openSelectedInEditor(selected ?? cwd)}><span aria-hidden="true">↗</span>{t('files.openEditor')}</button><button type="button" className="dsdr-file-icon" title={treeVisible ? 'Hide file tree' : 'Show file tree'} aria-label={treeVisible ? 'Hide file tree' : 'Show file tree'} onClick={onToggleTree}>▥</button></div>
           {selected && fileKind === 'text' ? (
