@@ -697,7 +697,7 @@ const REVIEW_CSS = `
 .dsdr-header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
 .dsdr-title{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary)}
 .dsdr-subtitle{color:var(--dsw-alias-label-tertiary);font-size:12px;font-family:var(--dsw-font-mono)}
-.dsdr-tabs{display:flex;gap:4px;margin-left:14px}
+.dsdr-tabs{display:flex;gap:4px;margin-left:8px;min-width:0;overflow:auto}.dsdr-review-toolbar{display:flex;align-items:center;gap:10px;min-height:43px;padding:7px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);flex:none}
 .dsdr-tab{box-sizing:border-box;min-height:26px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:2px 10px;font:inherit;font-size:12px;line-height:18px}
 .dsdr-tab:hover{color:var(--dsw-alias-label-secondary)}
 .dsdr-tab-active{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
@@ -3764,58 +3764,13 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
         <div className="dsdr-header">
           <span className="dsdr-title">{t('review.title')}</span>
           <div className="dsdr-tabs" role="tablist" aria-label={t('review.title')}>
-            <button type="button" role="tab" aria-selected={surface === 'review'} className={`dsdr-tab${surface === 'review' ? ' dsdr-tab-active' : ''}`} onClick={() => setSurface('review')}>{t('review.title')}</button>
             {openFileTabs.map((path) => (
               <button key={path} type="button" role="tab" aria-selected={surface === path} className={`dsdr-tab dsdr-file-tab${surface === path ? ' dsdr-tab-active' : ''}`} onClick={() => { setSurface(path); setFilesTarget(path) }} title={path}>
                 <FileTreeGlyph path={path} /><span>{baseName(path)}</span><span role="button" className="dsdr-file-tab-close" aria-label={`Close ${baseName(path)}`} onClick={(event) => { event.stopPropagation(); closeFilesTab(path) }}><IconX /></span>
               </button>
             ))}
           </div>
-          {surface === 'review' && tab === 'workspace' && status?.isRepo ? (
-            <span className="dsdr-scope">
-              {repos.length > 1 ? (
-                <ThemeSelect
-                  ariaLabel={t('repo.label')}
-                  value={repoPath ?? activeCwd ?? ''}
-                  options={repos.map((r) => ({ value: r.path, label: `${baseName(r.path)}${r.branch ? ` (${r.branch})` : ''}` }))}
-                  onChange={(v) => {
-                    setRepoPath(v)
-                    setSelected(null)
-                    setReview(null)
-                  }}
-                />
-              ) : null}
-              <ThemeSelect
-                ariaLabel={t('scope.label')}
-                value={scope}
-                options={SCOPE_OPTIONS.map((s) => ({ value: s.id, label: t(s.label) }))}
-                onChange={(v) => {
-                  setScope(v as WorkspaceScope)
-                  setSelected(null)
-                }}
-              />
-              {scope === 'branch' ? (
-                <ThemeSelect
-                  ariaLabel={t('scope.base')}
-                  value={baseBranch ?? ''}
-                  options={branches.map((b) => ({ value: b, label: b }))}
-                  onChange={setBaseBranch}
-                />
-              ) : null}
-            </span>
-          ) : null}
-          {surface === 'review' ? <DiffViewToggle view={view} onChange={setView} t={t} /> : null}
-          <span className="dsdr-subtitle">
-            {tab === 'session'
-              ? t('review.sessionStats', { rounds: rounds.length, files: totalSessionFiles })
-              : status?.isRepo
-                ? `${status.branch ?? t('review.detached')} · ${t('review.changes', { added: totalAdded, deleted: totalDeleted })}${status.ahead > 0 ? ` · ${t('review.ahead', { n: status.ahead })}` : ''}${status.behind > 0 ? ` · ${t('review.behind', { n: status.behind })}` : ''}`
-                : t('review.notRepo')}
-          </span>
           <span className="dsdr-spacer" />
-         {surface === 'review' && tab === 'workspace' && allowActions ? (
-            <button type="button" className="dsdr-btn" disabled={busy || (files.length === 0 && stagedCount === 0)} onClick={() => setCommitOpen(true)}>{t('review.commit')}</button>
-          ) : null}
           <button type="button" className="dsdr-btn" aria-label={t('review.close')} onClick={close}>
             <IconX />
           </button>
@@ -3829,6 +3784,27 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               <label className="dsdr-commit-include"><input type="checkbox" checked={includeUnstaged} onChange={(event) => setIncludeUnstaged(event.target.checked)} /> Include unstaged changes</label>
               <div className="dsdr-commit-actions"><button type="button" className="dsdr-btn" onClick={() => setCommitOpen(false)}>{t('comment.cancel')}</button><button type="button" className="dsdr-btn" disabled={busy || !commitMessage.trim()} onClick={() => void submitCommit(false)}>{t('review.commit')}</button><button type="button" className="dsdr-btn dsdr-btn-primary" disabled={busy || !commitMessage.trim()} onClick={() => void submitCommit(true)}>{t('review.commit')} and {t('review.push')}</button><button type="button" className="dsdr-btn" disabled={busy || (status?.ahead ?? 0) === 0} onClick={() => { setCommitOpen(false); onPush(true) }}>{t('review.push')}</button></div>
             </div>
+          </div>
+        ) : null}
+        {surface === 'review' ? (
+          <div className="dsdr-review-toolbar">
+            {tab === 'workspace' && status?.isRepo ? (
+              <span className="dsdr-scope">
+                {repos.length > 1 ? <ThemeSelect ariaLabel={t('repo.label')} value={repoPath ?? activeCwd ?? ''} options={repos.map((r) => ({ value: r.path, label: `${baseName(r.path)}${r.branch ? ` (${r.branch})` : ''}` }))} onChange={(v) => { setRepoPath(v); setSelected(null); setReview(null) }} /> : null}
+                <ThemeSelect ariaLabel={t('scope.label')} value={scope} options={SCOPE_OPTIONS.map((s) => ({ value: s.id, label: t(s.label) }))} onChange={(v) => { setScope(v as WorkspaceScope); setSelected(null) }} />
+                {scope === 'branch' ? <ThemeSelect ariaLabel={t('scope.base')} value={baseBranch ?? ''} options={branches.map((b) => ({ value: b, label: b }))} onChange={setBaseBranch} /> : null}
+              </span>
+            ) : null}
+            <DiffViewToggle view={view} onChange={setView} t={t} />
+            <span className="dsdr-subtitle">
+              {tab === 'session'
+                ? t('review.sessionStats', { rounds: rounds.length, files: totalSessionFiles })
+                : status?.isRepo
+                  ? `${status.branch ?? t('review.detached')} · ${t('review.changes', { added: totalAdded, deleted: totalDeleted })}${status.ahead > 0 ? ` · ${t('review.ahead', { n: status.ahead })}` : ''}${status.behind > 0 ? ` · ${t('review.behind', { n: status.behind })}` : ''}`
+                  : t('review.notRepo')}
+            </span>
+            <span className="dsdr-spacer" />
+            {tab === 'workspace' && allowActions ? <button type="button" className="dsdr-btn" disabled={busy || (files.length === 0 && stagedCount === 0)} onClick={() => setCommitOpen(true)}>{t('review.commit')}</button> : null}
           </div>
         ) : null}
         {surface !== 'review' ? (
