@@ -31,9 +31,11 @@ import { json } from '@codemirror/lang-json'
 import { markdown } from '@codemirror/lang-markdown'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
+import { Tree, type NodeRendererProps } from 'react-arborist'
 import type { ClientContext, ISessions, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { ConversationNode, ToolResultNode, UserMessageNode } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId, ToolResultView } from '@deepseek-ai/dsh-api-remotes/client'
 import { IconChevronDownOutline14, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -53,7 +55,7 @@ import type { ReviewPackage, ReviewPackageComment, ReviewPackageFinding } from '
 export const name = 'diff-review'
 
 /** Required client services (fiber inject). */
-export const inject = ['sessions', 'slots', 'locale']
+export const inject = ['sessions', 'slots', 'locale', 'theme']
 
 const LOCALE_NS = 'diff-review'
 /** Max comment chips shown in the dock row before collapsing into +N. */
@@ -82,6 +84,9 @@ const overlayStore = createSnapshotStore<{ open: boolean; cwd: string | null; ke
   presentation: 'dock',
   focus: null,
 })
+
+/** The editor follows DSH's resolved theme, including third-party themes. */
+const editorThemeStore = createSnapshotStore<{ colorScheme: 'light' | 'dark' }>({ colorScheme: 'dark' })
 
 /**
  * Pending inline comments surfaced above the composer (Codex-style). The
@@ -965,7 +970,7 @@ const REVIEW_CSS = `
 .dsdr-files-search{width:100%;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);padding:7px 10px;font:inherit;font-size:12px;line-height:18px}
 .dsdr-files-search:focus{outline:none;border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-brand-primary) 15%,transparent)}
 .dsdr-files-content{display:grid;min-height:0;flex:1;overflow:hidden}
-.dsdr-files-list{min-height:0;overflow:auto;overscroll-behavior:contain;border-right:1px solid var(--dsw-alias-border-l1);padding:8px 6px;background:var(--dsw-alias-bg-layer-1)}
+.dsdr-files-list{min-height:0;overflow:hidden;border-right:1px solid var(--dsw-alias-border-l1);padding:8px 6px;background:var(--dsw-alias-bg-layer-1)}.dsdr-arborist{width:100%}.dsdr-arborist-fill{height:100%}.dsdr-arborist [role=tree]{overscroll-behavior:contain}
 .dsdr-files-item{display:flex;width:100%;box-sizing:border-box;border:0;border-radius:6px;background:transparent;padding:6px 9px;color:var(--dsw-alias-label-secondary);font:11px/17px var(--dsw-font-mono);text-align:left;cursor:pointer}
 .dsdr-files-item:hover,.dsdr-files-item-active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsdr-files-menu{position:fixed;z-index:80;display:flex;min-width:180px;flex-direction:column;gap:2px;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-files-menu button{border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);padding:8px 10px;text-align:left;font:12px var(--dsw-font-sans);cursor:pointer}.dsdr-files-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}
@@ -2115,17 +2120,28 @@ function languageForPath(path: string): Extension {
   return []
 }
 
-const CODE_MIRROR_THEME = EditorView.theme({
+const CODE_MIRROR_BASE_THEME = EditorView.theme({
   '&': { height: '100%', fontSize: '13px', backgroundColor: 'var(--dsw-alias-bg-layer-1)', color: 'var(--dsw-alias-label-primary)' },
   '.cm-content': { fontFamily: 'var(--dsw-font-mono)', tabSize: '2' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--dsw-alias-label-primary)' },
+}, { dark: false })
+
+const CODE_MIRROR_DARK_THEME = EditorView.theme({
+  '&': { backgroundColor: 'var(--dsw-alias-bg-layer-1)' },
+  '.cm-gutters': { backgroundColor: 'var(--dsw-alias-bg-layer-1)', borderRightColor: 'var(--dsw-alias-border-l1)' },
 }, { dark: true })
+
+const CODE_MIRROR_LIGHT_THEME = EditorView.theme({
+  '&': { backgroundColor: 'var(--dsw-alias-bg-layer-1)' },
+  '.cm-gutters': { backgroundColor: 'var(--dsw-alias-bg-layer-1)', borderRightColor: 'var(--dsw-alias-border-l1)' },
+}, { dark: false })
 
 function CodeEditor({ path, value, onChange }: { path: string; value: string; onChange: (value: string) => void }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange)
   const language = useMemo(() => languageForPath(path), [path])
+  const colorScheme = useSyncExternalStore(editorThemeStore.subscribe, () => editorThemeStore.getSnapshot().colorScheme)
 
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
   useEffect(() => {
@@ -2141,9 +2157,9 @@ function CodeEditor({ path, value, onChange }: { path: string; value: string; on
           highlightActiveLine(),
           highlightActiveLineGutter(),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-          oneDark,
+          ...(colorScheme === 'dark' ? [oneDark, CODE_MIRROR_DARK_THEME] : [CODE_MIRROR_LIGHT_THEME]),
           language,
-          CODE_MIRROR_THEME,
+          CODE_MIRROR_BASE_THEME,
           EditorView.updateListener.of((update) => {
             if (update.docChanged) onChangeRef.current(update.state.doc.toString())
           }),
@@ -2158,7 +2174,7 @@ function CodeEditor({ path, value, onChange }: { path: string; value: string; on
     // The path selects the syntax extension. Value changes are dispatched below
     // so typing never recreates the editor or loses cursor/scroll state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [language])
+  }, [language, colorScheme])
   useEffect(() => {
     const view = viewRef.current
     if (!view || view.state.doc.toString() === value) return
@@ -2252,6 +2268,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat, t
             collapsed={collapsed}
             onToggleDir={onToggleDir}
             depth={0}
+            fillHeight
             renderLeaf={(leaf) => <button type="button" className={'dsdr-files-item' + (selected === leaf.path ? ' dsdr-files-item-active' : '')} onClick={() => void open(leaf.path)} onContextMenu={(event) => { event.preventDefault(); setMenu({ path: leaf.path, x: event.clientX, y: event.clientY }) }} title={leaf.path}>{leaf.name}</button>}
           />
           {!loading && shown.length === 0 ? <div className="dsdr-empty">{t('files.empty')}</div> : null}
@@ -2352,42 +2369,87 @@ function buildFileTree<T>(items: readonly T[], pathOf: (item: T) => string): Tre
   return root
 }
 
-/** Recursive tree renderer: collapsible directories + leaf rows. */
+/**
+ * Virtualized tree renderer. react-arborist owns keyboard navigation and
+ * scroll bookkeeping; the surrounding review code remains the source of
+ * truth for directory collapse state and file actions.
+ */
 function FileTreeView<T>(props: {
   nodes: TreeNode<T>[]
   collapsed: ReadonlySet<string>
   onToggleDir: (path: string) => void
   depth: number
   renderLeaf: (leaf: TreeLeaf<T>) => ReactNode
+  fillHeight?: boolean
 }): ReactElement {
-  const { nodes, collapsed, onToggleDir, depth, renderLeaf } = props
+  const { nodes, collapsed, onToggleDir, renderLeaf, fillHeight = false } = props
+  const hostRef = useRef<HTMLDivElement>(null)
+  const [hostHeight, setHostHeight] = useState(0)
+  const flatCount = useMemo(() => {
+    const count = (items: TreeNode<T>[]): number => items.reduce((total, item) => total + 1 + (item.kind === 'dir' ? count(item.children) : 0), 0)
+    return count(nodes)
+  }, [nodes])
+  const initialOpenState = useMemo(() => {
+    const open: Record<string, boolean> = {}
+    const visit = (items: TreeNode<T>[]) => items.forEach((item) => {
+      if (item.kind === 'dir') {
+        open[item.path] = !collapsed.has(item.path)
+        visit(item.children)
+      }
+    })
+    visit(nodes)
+    return open
+  }, [nodes, collapsed])
+  const treeKey = useMemo(() => Array.from(collapsed).sort().join('\u0000'), [collapsed])
+
+  useEffect(() => {
+    const element = hostRef.current
+    if (!element || !fillHeight) return
+    const update = () => setHostHeight(element.clientHeight)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [fillHeight])
+
+  const height = fillHeight ? Math.max(1, hostHeight) : Math.max(30, Math.min(420, flatCount * 29 + 8))
   return (
-    <>
-      {nodes.map((node) =>
-        node.kind === 'dir' ? (
-          <div key={node.path}>
-            {/* Directory row: click toggles this directory's collapse state
-                (collapsed → expand, expanded → collapse). */}
-            <button
-              type="button"
-              className={`dsdr-dir${collapsed.has(node.path) ? '' : ' dsdr-dir-open'}`}
-              style={{ paddingLeft: depth * 14 + 8 }}
-              aria-expanded={!collapsed.has(node.path)}
-              onClick={() => onToggleDir(node.path)}
-            >
-              <span className="dsdr-dir-caret" aria-hidden="true">{collapsed.has(node.path) ? '▸' : '▾'}</span>
-              <span className="dsdr-dir-name" title={node.path}>{node.name}</span>
-              <span className="dsdr-dir-count">{node.children.length}</span>
-            </button>
-            {!collapsed.has(node.path) ? (
-              <FileTreeView nodes={node.children} collapsed={collapsed} onToggleDir={onToggleDir} depth={depth + 1} renderLeaf={renderLeaf} />
-            ) : null}
-          </div>
-        ) : (
-          <div key={node.path} style={{ paddingLeft: depth * 14 }}>{renderLeaf(node)}</div>
-        ),
-      )}
-    </>
+    <div ref={hostRef} className={`dsdr-arborist${fillHeight ? ' dsdr-arborist-fill' : ''}`}>
+      {(!fillHeight || hostHeight > 0) ? (
+        <Tree<TreeNode<T>>
+          key={treeKey}
+          data={nodes}
+          width="100%"
+          height={height}
+          rowHeight={29}
+          indent={14}
+          paddingTop={4}
+          paddingBottom={4}
+          idAccessor={(item) => item.path}
+          childrenAccessor={(item) => item.kind === 'dir' ? item.children : null}
+          initialOpenState={initialOpenState}
+          disableDrag
+          disableDrop
+          disableEdit
+          selectionFollowsFocus
+          onToggle={onToggleDir}
+        >
+          {({ node, style }: NodeRendererProps<TreeNode<T>>) => {
+            const item = node.data
+            if (item.kind === 'dir') {
+              return (
+                <button type="button" className={`dsdr-dir${node.isOpen ? ' dsdr-dir-open' : ''}`} style={style} aria-expanded={node.isOpen} onClick={() => node.toggle()}>
+                  <span className="dsdr-dir-caret" aria-hidden="true">{node.isOpen ? '▾' : '▸'}</span>
+                  <span className="dsdr-dir-name" title={item.path}>{item.name}</span>
+                  <span className="dsdr-dir-count">{item.children.length}</span>
+                </button>
+              )
+            }
+            return <div style={style}>{renderLeaf(item)}</div>
+          }}
+        </Tree>
+      ) : null}
+    </div>
   )
 }
 
@@ -4415,6 +4477,12 @@ function DiffReviewConfigCard({ t }: { t: (key: keyof typeof zh, params?: Record
 
 /** Client plugin body. */
 export function apply(ctx: ClientContext): void {
+  const syncEditorTheme = () => {
+    const colorScheme = ctx.theme.getTheme().active.colorScheme
+    editorThemeStore.update((state) => { state.colorScheme = colorScheme })
+  }
+  syncEditorTheme()
+  ctx.on('theme/change', syncEditorTheme)
   ctx.effect(() => ctx.locale.register(LOCALE_NS, { zh, en }), 'diff-review: locale dictionary')
   ctx.slots.inject('conversation.session.header.actions', () =>
     ctx.slots.register(
