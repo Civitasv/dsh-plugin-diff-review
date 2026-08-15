@@ -767,6 +767,7 @@ const REVIEW_CSS = `
 .dsdr-diff{flex:1;min-width:0;overflow:auto;padding:10px 0}
 .dsdr-diff-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--dsw-alias-label-tertiary);font-size:13px}
 .dsdr-diff-head{display:flex;align-items:center;gap:10px;padding:6px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
+.dsdr-file-head-actions{display:flex;gap:3px;opacity:0;transition:opacity .12s}.dsdr-diff-head:hover .dsdr-file-head-actions,.dsdr-file-head-actions:focus-within{opacity:1}
 .dsdr-diff-path{font-family:var(--dsw-font-mono);font-size:13px;color:var(--dsw-alias-label-primary);flex:1;min-width:0;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
 .dsdr-diff-stats{font-size:11px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;flex:none}
 .dsdr-diff-scroll{flex:1;min-height:0;overflow:auto;display:flex}
@@ -2092,7 +2093,7 @@ function highlightCode(value: string): ReactNode[] {
   })
 }
 
-function FilesWorkspace({ cwd, t, collapsed, onToggleDir }: { cwd: string; t: CardT; collapsed: ReadonlySet<string>; onToggleDir: (path: string) => void }) {
+function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target }: { cwd: string; t: CardT; collapsed: ReadonlySet<string>; onToggleDir: (path: string) => void; target: string | null }) {
   const [files, setFiles] = useState<WorkspaceFileEntry[]>([])
   const [filter, setFilter] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
@@ -2139,6 +2140,9 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir }: { cwd: string; t: Ca
       if (data.ok) { savedContent.current = content; setMtime(data.mtime ?? mtime); setNotice(t('files.saved')) } else setNotice(data.error ?? 'Failed to save file')
     } catch { setNotice('Failed to save file') } finally { setSaving(false) }
   }
+  useEffect(() => {
+    if (target && target !== selected) void open(target)
+  }, [target])
   useEffect(() => {
     if (!selected || loading || saving || content === savedContent.current) return
     const timer = window.setTimeout(() => void save(), 800)
@@ -2760,6 +2764,8 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const [repos, setRepos] = useState<{ path: string; branch: string | null }[]>([])
   const [repoPath, setRepoPath] = useState<string | null>(null)
   const [surface, setSurface] = useState<'review' | 'files'>('review')
+  const [filesTarget, setFilesTarget] = useState<string | null>(null)
+  const [collapsedReviewFiles, setCollapsedReviewFiles] = useState<ReadonlySet<string>>(() => new Set())
   // Temporary line highlight (jump target from a PR comment or a finding).
   const [jumpLine, setJumpLine] = useState<number | null>(null)
 
@@ -3322,6 +3328,18 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     const result = await openInEditor(activeCwd, path, line)
     if (!result.ok) setNotice({ kind: 'error', text: `${t('editor.failed')}: ${result.error ?? ''}` })
   }
+  const openInFilesTab = (path: string) => {
+    setFilesTarget(path)
+    setSurface('files')
+  }
+  const toggleReviewFile = (path: string) => {
+    setCollapsedReviewFiles((previous) => {
+      const next = new Set(previous)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
 
   /** Jump from a PR comment to the file (and highlight the line). */
   const onPrCommentClick = (path: string | null | undefined, line: number | null | undefined) => {
@@ -3572,7 +3590,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
           </div>
         ) : null}
         {surface === 'files' ? (
-          <FilesWorkspace cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} />
+          <FilesWorkspace cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} target={filesTarget} />
         ) : (
           <>
         {sendOpen ? (
@@ -4079,9 +4097,11 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                     <span className="dsdr-diff-stats">
                       {selectedFile.binary ? t('review.binary') : t('review.changes', { added: selectedFile.added, deleted: selectedFile.deleted })}
                     </span>
-                    <button type="button" className="dsdr-btn" disabled={busy} onClick={() => void openFile(selectedFile.path)} title={t('editor.openFile')}>
-                      ↗ {t('editor.openFile')}
-                    </button>
+                    <span className="dsdr-file-head-actions">
+                      <button type="button" className="dsdr-file-icon" title="Copy path" aria-label="Copy path" onClick={() => void writeClipboard(selectedFile.path)}>⧉</button>
+                      <button type="button" className="dsdr-file-icon" title={collapsedReviewFiles.has(selectedFile.path) ? 'Expand file' : 'Collapse file'} aria-label={collapsedReviewFiles.has(selectedFile.path) ? 'Expand file' : 'Collapse file'} onClick={() => toggleReviewFile(selectedFile.path)}>{collapsedReviewFiles.has(selectedFile.path) ? '⌄' : '⌃'}</button>
+                      <button type="button" className="dsdr-file-icon" title="Open file in Files" aria-label="Open file in Files" onClick={() => openInFilesTab(selectedFile.path)}>↗</button>
+                    </span>
                     {allowActions && selectedFile.unstaged ? (
                       <button type="button" className="dsdr-file-icon" title={t('hunk.stage')} aria-label={t('hunk.stage')} disabled={busy} onClick={() => onFileAction('accept', selectedFile.path)}>+</button>
                     ) : null}
@@ -4092,7 +4112,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                       <button type="button" className="dsdr-file-icon dsdr-file-icon-danger" title={t('hunk.revert')} aria-label={t('hunk.revert')} disabled={busy} onClick={() => onFileAction('revert', selectedFile.path)}>↶</button>
                     ) : null}
                   </div>
-                  {view === 'split' && !selectedFile.binary && gitSplitBlocks(selectedFile.diff).length > 0 ? (
+                  {!collapsedReviewFiles.has(selectedFile.path) ? (view === 'split' && !selectedFile.binary && gitSplitBlocks(selectedFile.diff).length > 0 ? (
                     <div className="dsdr-diff-scroll">
                       <div className="dsdr-split">
                         <div className="dsdr-split-head">
@@ -4211,7 +4231,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                       onOpenLine={(p, line) => void openFile(p, line)}
                       jumpLine={jumpLine}
                     />
-                  )}
+                  )) : null}
                 </>
               ) : (
                 <div className="dsdr-diff-empty">{scope === 'commit' ? t('review.selectCommit') : t('review.empty')}</div>
