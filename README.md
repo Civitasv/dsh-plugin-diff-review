@@ -8,10 +8,10 @@
 
 ### GitHub 安装
 
-安装稳定版本时，将 `<tag>` 替换为要使用的发布版本：
+安装稳定版本：
 
 ```sh
-dsh plugin --profile web add github:Civitasv/dsh-plugin-diff-review#<tag>
+dsh plugin --profile web add github:Civitasv/dsh-plugin-diff-review#v0.1.0
 ```
 
 想直接使用最新版本：
