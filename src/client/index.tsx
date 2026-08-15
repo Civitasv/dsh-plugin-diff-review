@@ -25,7 +25,9 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConversationNode, ToolResultNode, UserMessageNode } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId, ToolResultView } from '@deepseek-ai/dsh-api-remotes/client'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutline14, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ImageGallery } from '@deepseek-ai/dsh-client-ui-attachment'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 // Type-only imports pulling the header-action slot contract, the shell.overlay
 // contract, the settings.general.item slot contract and the standard kit.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -34,6 +36,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { ApplyHunkResponse, ApplyResponse, CommentsResponse, CommitDiffResponse, CommitInfo, DiffFile, DiffHunk, GitResponse, HistoryResponse, PrResponse, ReposResponse, ReviewComment, ReviewFinding, ReviewResponse, StatusResponse } from '../shared/types.ts'
+import { parseReviewPackage, isReviewPackageText } from './review-package.ts'
+import type { ReviewPackage, ReviewPackageComment, ReviewPackageFinding } from './review-package.ts'
 
 export const name = 'diff-review'
 
@@ -77,19 +81,19 @@ interface PendingComments {
   diffs: Record<string, string>
   /** Last AI review result (verdict + findings), appended to the carried message. */
   review: ReviewResponse | null
-  /** Comment ids already carried with a previous message (not re-sent). */
-  sentCommentIds: string[]
-  /** Review key already carried (not re-sent until a new review runs). */
-  sentReviewKey: string | null
 }
 const pendingCommentsStore = createSnapshotStore<PendingComments>({
   cwd: null,
   comments: [],
   diffs: {},
   review: null,
-  sentCommentIds: [],
-  sentReviewKey: null,
 })
+
+/**
+ * Durable, per-workspace "already carried" state (survives reloads; isolated
+ * per cwd so comments sent in one workspace never filter another's).
+ */
+const sentStore = createSnapshotStore<Record<string, { sentCommentIds: string[]; sentReviewKey: string | null }>>({}, { persist: { name: 'dsdr-review-sent' } })
 
 /** Inject text into a session as a user message; falls back to the clipboard. */
 async function injectToSession(sessions: ISessions | undefined, sessionId: SessionId | null, text: string): Promise<'sent' | 'copied' | 'failed'> {
@@ -157,6 +161,13 @@ const SCOPE_OPTIONS: { id: WorkspaceScope; label: keyof typeof zh }[] = [
 /** Browser-side absolute path check (no node:path in the client bundle). */
 function isAbsPath(p: string): boolean {
   return p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p)
+}
+
+/** Largest of three numbers (prefers b on ties). */
+function maxOf3(a: number, b: number, c: number): number {
+  if (b >= a && b >= c) return b
+  if (a >= c) return a
+  return c
 }
 
 function baseName(p: string): string {
@@ -736,6 +747,7 @@ const REVIEW_CSS = `
 .dsdr-dock-icon{display:inline-flex;color:var(--dsw-alias-button-info-fill)}
 .dsdr-dock-count{font-weight:600;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary);white-space:nowrap}
 .dsdr-dock-flash{color:var(--dsw-alias-state-success-primary);font-size:11px;white-space:nowrap}
+.dsdr-dock-send{min-height:22px;padding:1px 10px;font-size:11px;line-height:16px}
 .dsdr-dock-close{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:0}
 .dsdr-dock-close:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsdr-dock-list{display:flex;flex-direction:column;gap:2px;padding-top:4px;margin-top:2px;max-height:168px;overflow-y:auto}
@@ -762,6 +774,7 @@ const REVIEW_CSS = `
 .dsdr-spinner{flex:none;width:12px;height:12px;border-radius:50%;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-label-secondary);animation:dsdr-spin .8s linear infinite}
 @keyframes dsdr-spin{to{transform:rotate(360deg)}}
 .dsdr-empty{padding:40px;text-align:center;color:var(--dsw-alias-label-tertiary);font-size:13px}
+.dsdr-empty-actions{display:flex;justify-content:center;margin-top:12px}
 .dsdr-nodiff{padding:8px 16px;color:var(--dsw-alias-label-tertiary);font-size:12px}
 .dsdr-sel{position:relative;display:inline-flex}
 .dsdr-sel-trigger{box-sizing:content-box;min-width:180px;height:34px;background:var(--dsw-alias-bg-layer-3);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;color:var(--dsw-alias-label-primary);cursor:pointer;padding:0 12px;font:inherit;font-size:13px;line-height:1.5;display:inline-flex;align-items:center;gap:8px}
@@ -803,6 +816,38 @@ const REVIEW_CSS = `
 .dsdr-cell-add{background:rgba(46,160,67,.13)}
 .dsdr-cell-del{background:rgba(248,81,73,.12)}
 .dsdr-cell-dim{background:var(--dsw-alias-fill-l1, rgba(128,128,128,.05))}
+/* --- conversation review card (Codex-style) --- */
+.dsdr-review-card{display:flex;flex-direction:column;gap:2px;max-width:min(720px,100%);background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l1);border-radius:16px;box-shadow:var(--dsw-shadow-lv2);overflow:hidden;margin:2px 0}
+.dsdr-review-card-head{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);flex-wrap:wrap}
+.dsdr-review-card-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.dsdr-review-card-badge svg{color:var(--dsw-alias-button-info-fill)}
+.dsdr-review-card-workspace{flex:1;min-width:0;font-size:11px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dsdr-review-card-meta{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary)}
+.dsdr-review-card-group{display:flex;flex-direction:column}
+.dsdr-review-card-path{display:flex;align-items:center;gap:6px;width:100%;min-width:0;padding:6px 12px;background:0 0;border:0;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;font-weight:600;text-align:left;cursor:pointer;font-family:var(--dsw-font-mono)}
+.dsdr-review-card-path:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsdr-review-card-path span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsdr-review-card-item{display:flex;align-items:flex-start;gap:8px;width:100%;min-width:0;padding:5px 12px 5px 26px;background:0 0;border:0;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:18px;text-align:left;cursor:pointer}
+.dsdr-review-card-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsdr-review-card-loc{flex:none;font-family:var(--dsw-font-mono);font-size:11px;color:var(--dsw-alias-button-info-fill);white-space:nowrap;padding-top:1px}
+.dsdr-review-card-text{min-width:0;overflow-wrap:anywhere;white-space:pre-wrap}
+.dsdr-review-card-verdict-sec{display:flex;flex-direction:column;gap:4px;padding:8px 12px;border-top:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2)}
+.dsdr-review-card-verdict-head{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.dsdr-review-card-verdict{flex:none;font-size:11px;font-weight:600;border-radius:6px;padding:1px 6px}
+.dsdr-review-card-verdict-correct{background:rgba(46,160,67,.16);color:var(--dsw-alias-state-success-primary)}
+.dsdr-review-card-verdict-incorrect{background:rgba(248,81,73,.16);color:var(--dsw-alias-state-error-primary)}
+.dsdr-review-card-finding{display:flex;align-items:flex-start;gap:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+.dsdr-review-card-finding-text{min-width:0;overflow-wrap:anywhere}
+.dsdr-review-card-finding-loc{font-family:var(--dsw-font-mono);font-size:11px;color:var(--dsw-alias-label-tertiary)}
+.dsdr-review-card-foot{padding:6px 12px;font-size:11px;color:var(--dsw-alias-label-tertiary);border-top:1px solid var(--dsw-alias-border-l1)}
+/* --- fallback user bubble (native look) --- */
+.dsdr-fallback-user{flex-direction:column;align-items:flex-end;gap:6px;display:flex}
+.dsdr-fallback-user-stack{flex-direction:column;align-items:flex-end;gap:8px;min-width:0;max-width:min(525px,82%);display:flex}
+.dsdr-fallback-user-row{flex-direction:row;align-items:flex-end;gap:6px;max-width:100%;display:flex}
+.dsdr-fallback-user-bubble{background:var(--dsw-specific-bubble);max-width:100%;color:var(--dsw-alias-label-primary);border-radius:22px;padding:10px 16px;font-size:16px;line-height:24px;white-space:pre-wrap;overflow-wrap:anywhere}
+.dsdr-fallback-user-copy{flex:none;display:flex;align-items:center;justify-content:center;width:24px;height:24px;border:0;border-radius:6px;background:0 0;color:var(--dsw-alias-label-tertiary);cursor:pointer;font:inherit;font-size:11px;visibility:hidden;margin-bottom:2px}
+.dsdr-fallback-user:hover .dsdr-fallback-user-copy,.dsdr-fallback-user-copy:focus-visible{visibility:visible}
+.dsdr-fallback-user-copy:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 `
 if (typeof document !== 'undefined' && document.querySelector(`style[data-plugin-css=${JSON.stringify(STYLE_TAG)}]`) === null) {
   const tag = document.createElement('style')
@@ -825,6 +870,7 @@ const zh = {
   'review.notRepoHint': '「会话更改」页签不受影响，仍可查看每轮修改。',
   'review.noSessionChanges': '这个会话还没有文件修改记录',
   'review.sessionScan': '已扫描 {results} 个工具结果：{diff} 个携带 diff、{path} 个仅有路径——终端命令（bash）改文件不会计入会话记录。',
+  'review.goWorkspace': '查看工作区改动',
   'review.sessionStats': '{rounds} 轮 · {files} 个文件',
   'review.round': '第 {round} 轮',
   'review.empty': '没有未提交的更改 🎉',
@@ -929,10 +975,24 @@ const zh = {
   'repo.label': '仓库',
   'review.dockComments': '行内评论 {n} 条',
   'review.dockVerdict': '评审结论待发送',
+  'review.sendNow': '发送评论',
   'review.copiedFallback': '会话不可用，评论已复制（请粘贴发送）',
   'review.sendFailed': '评论发送失败',
   'review.dockJump': '点击在评审面板中打开对应变更',
   'review.dockHint': '随下一条消息自动附带（含 diff 与 AI 评审结论）',
+  'review.cardTitle': '行内评审',
+  'review.cardComments': '{n} 条评论',
+  'review.cardVerdict': 'AI 评审结论',
+  'review.cardJump': '点击在评审面板中定位到对应代码',
+  'review.cardOpenFile': '在评审面板中打开该文件',
+  'review.cardHint': '点击评论可在评审面板中定位到对应代码',
+  'fallback.image': '图片',
+  'fallback.open': '查看原图',
+  'fallback.openNamed': '查看原图 {name}',
+  'fallback.loading': '加载中…',
+  'fallback.loadFailed': '加载失败',
+  'fallback.lightboxDialog': '图片预览',
+  'fallback.lightboxClose': '关闭',
   'settings.title': '变动',
   'settings.font': '字体',
   'settings.size': '字号',
@@ -954,6 +1014,7 @@ const en: Record<keyof typeof zh, string> = {
   'review.notRepoHint': 'The "Session" tab still shows every round\'s changes.',
   'review.noSessionChanges': 'No file changes recorded in this session yet',
   'review.sessionScan': 'Scanned {results} tool results: {diff} with diffs, {path} path-only — terminal (bash) edits are not tracked in the session log.',
+  'review.goWorkspace': 'View workspace changes',
   'review.sessionStats': '{rounds} rounds · {files} files',
   'review.round': 'Round {round}',
   'review.empty': 'No uncommitted changes 🎉',
@@ -1058,10 +1119,24 @@ const en: Record<keyof typeof zh, string> = {
   'repo.label': 'Repo',
   'review.dockComments': '{n} inline comments',
   'review.dockVerdict': 'verdict pending',
+  'review.sendNow': 'Send comments',
   'review.copiedFallback': 'Session unavailable — comments copied (paste to send)',
   'review.sendFailed': 'Failed to send comments',
   'review.dockJump': 'Open the matching change in the review panel',
   'review.dockHint': 'Auto-carried with your next message (diff + AI verdict included)',
+  'review.cardTitle': 'Inline review',
+  'review.cardComments': '{n} comments',
+  'review.cardVerdict': 'AI review verdict',
+  'review.cardJump': 'Jump to the matching code in the review panel',
+  'review.cardOpenFile': 'Open this file in the review panel',
+  'review.cardHint': 'Click a comment to jump to the matching change block',
+  'fallback.image': 'Image',
+  'fallback.open': 'View original',
+  'fallback.openNamed': 'View original {name}',
+  'fallback.loading': 'Loading…',
+  'fallback.loadFailed': 'Failed to load',
+  'fallback.lightboxDialog': 'Image preview',
+  'fallback.lightboxClose': 'Close',
   'settings.title': 'Changes',
   'settings.font': 'Font',
   'settings.size': 'Font size',
@@ -1275,17 +1350,20 @@ function commentMatches(comment: ReviewComment, oldLine: number | null, newLine:
   return true
 }
 
-/** Hover-to-comment affordance + count marker in the line-number gutter. */
+/** Hover-to-comment affordance in the line-number gutter. Lines that already
+ * have comments show a non-interactive count badge (the saved boxes below the
+ * line are the view); the + only appears on comment-free lines to add one. */
 function CommentLine({ count, onOpen, t }: { count: number; onOpen: () => void; t: (key: keyof typeof zh, params?: Record<string, unknown>) => string }) {
+  if (count > 0) {
+    return (
+      <span className="dsdr-comment-add dsdr-comment-has" title={t('comment.show')} aria-label={t('comment.show')}>
+        {count}
+      </span>
+    )
+  }
   return (
-    <button
-      type="button"
-      className={`dsdr-comment-add${count > 0 ? ' dsdr-comment-has' : ''}`}
-      title={count > 0 ? t('comment.show') : t('comment.add')}
-      aria-label={count > 0 ? t('comment.show') : t('comment.add')}
-      onClick={onOpen}
-    >
-      {count > 0 ? count : '+'}
+    <button type="button" className="dsdr-comment-add" title={t('comment.add')} aria-label={t('comment.add')} onClick={onOpen}>
+      +
     </button>
   )
 }
@@ -1915,6 +1993,205 @@ function FileTreeView<T>(props: {
 }
 
 // ---------------------------------------------------------------------------
+// Conversation card (session scope): the carried review package renders in the
+// transcript as a Codex-style card — each comment clickable to jump to the
+// matching change block in the review panel. The user-node renderer is
+// shadowed at priority -1; non-package messages fall back to a native-look
+// bubble (the shell's own renderer cannot be delegated to, because the slot
+// hands our namespace-bound `t` to whatever component wins the cell).
+// ---------------------------------------------------------------------------
+
+/** Structural user content block (ContentBlock is not exported from runtime). */
+type UserBlock = { type: string; text?: string; attachment?: ImageAttachmentRef }
+
+/** Plain text of a user message's content blocks (text blocks concatenated). */
+function userMessageText(content: readonly UserBlock[]): string {
+  let out = ''
+  for (const block of content) {
+    if (block.type === 'text' && typeof block.text === 'string') out += block.text
+  }
+  return out
+}
+
+/** Full props of our shadowed user-node renderer (t bound to our namespace). */
+type UserReviewNodeProps = PropsRuntime<'conversation.chat.node', 'user'> & PropsLocale<'diff-review'>
+/** Translator bound to the plugin namespace (shared by the card/bubble). */
+type CardT = PropsLocale<'diff-review'>['t']
+
+/** Group comments by path, preserving first-seen order. */
+function groupComments(comments: ReviewPackageComment[]): { path: string; comments: ReviewPackageComment[] }[] {
+  const groups: { path: string; comments: ReviewPackageComment[] }[] = []
+  const index = new Map<string, number>()
+  for (const c of comments) {
+    let g = index.get(c.path)
+    if (g === undefined) {
+      g = groups.length
+      index.set(c.path, g)
+      groups.push({ path: c.path, comments: [] })
+    }
+    groups[g].comments.push(c)
+  }
+  return groups
+}
+
+function IconFile() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+    </svg>
+  )
+}
+
+/** Codex-style review card for a carried review package message. */
+function ReviewPackageCard({ pkg, cwd, t }: { pkg: ReviewPackage; cwd?: string; t: CardT }) {
+  const targetCwd = pkg.workspace ?? cwd ?? null
+  const jump = (path: string, line?: number) => {
+    if (!targetCwd) return
+    overlayStore.update((d) => {
+      d.open = true
+      d.cwd = targetCwd
+      d.focus = { path, line }
+      d.key = d.key + 1
+    })
+  }
+  const groups = useMemo(() => groupComments(pkg.comments), [pkg.comments])
+  const showVerdict = pkg.verdict !== null || pkg.findings.length > 0
+  return (
+    <div className="dsdr-review-card" data-time-hover-root>
+      <div className="dsdr-review-card-head">
+        <span className="dsdr-review-card-badge"><IconComment />{t('review.cardTitle')}</span>
+        {targetCwd ? (
+          <span className="dsdr-review-card-workspace" title={targetCwd}>{targetCwd}</span>
+        ) : null}
+        <span className="dsdr-spacer" />
+        {pkg.comments.length > 0 ? (
+          <span className="dsdr-review-card-meta">{t('review.cardComments', { n: pkg.comments.length })}</span>
+        ) : null}
+      </div>
+      {groups.map((g) => (
+        <div key={g.path} className="dsdr-review-card-group">
+          <button type="button" className="dsdr-review-card-path" title={t('review.cardOpenFile')} onClick={() => jump(g.path)}>
+            <IconFile /><span>{g.path}</span>
+          </button>
+          {g.comments.map((c, i) => (
+            <button
+              key={i}
+              type="button"
+              className="dsdr-review-card-item"
+              title={t('review.cardJump')}
+              onClick={() => jump(c.path, c.line ?? undefined)}
+            >
+              <span className="dsdr-review-card-loc">{c.line !== null ? `${c.path}:${c.line}` : `${c.path} (old)`}</span>
+              <span className="dsdr-review-card-text">{c.text}</span>
+            </button>
+          ))}
+        </div>
+      ))}
+      {showVerdict ? (
+        <div className="dsdr-review-card-verdict-sec">
+          <div className="dsdr-review-card-verdict-head">
+            <span>{t('review.cardVerdict')}</span>
+            {pkg.verdict ? (
+              <span className={`dsdr-review-card-verdict dsdr-review-card-verdict-${pkg.verdict}`}>
+                {pkg.verdict === 'correct' ? t('review.verdictCorrect') : t('review.verdictIncorrect')}
+              </span>
+            ) : null}
+          </div>
+          {pkg.findings.map((f: ReviewPackageFinding, i: number) => (
+            <div key={i} className="dsdr-review-card-finding">
+              <span className={`dsdr-finding-tag dsdr-finding-${f.priority}`}>{f.priority}</span>
+              <span className="dsdr-review-card-finding-text">
+                <span className="dsdr-review-card-finding-loc">{f.file}:{f.line}</span>{' '}
+                {f.title}{f.detail ? ` — ${f.detail}` : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div className="dsdr-review-card-foot">{t('review.cardHint')}</div>
+    </div>
+  )
+}
+
+/** Native-look fallback bubble for ordinary user messages (shadowed cell). */
+function FallbackUserBubble({
+  text,
+  images,
+  loadImage,
+  t,
+}: {
+  text: string
+  images: readonly (UserBlock & { attachment: ImageAttachmentRef })[]
+  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  t: CardT
+}) {
+  const [copied, setCopied] = useState(false)
+  const onCopy = () => {
+    void writeClipboard(text).then((ok) => {
+      if (!ok) return
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1000)
+    })
+  }
+  const labels = useMemo(
+    () => ({
+      image: t('fallback.image'),
+      open: t('fallback.open'),
+      openNamed: (name: string) => t('fallback.openNamed', { name }),
+      loading: t('fallback.loading'),
+      loadFailed: t('fallback.loadFailed'),
+      lightbox: { dialog: t('fallback.lightboxDialog'), close: t('fallback.lightboxClose') },
+    }),
+    [t],
+  )
+  return (
+    <div className="dsdr-fallback-user" data-time-hover-root>
+      <div className="dsdr-fallback-user-stack">
+        {images.length > 0 ? (
+          <ImageGallery images={images} load={loadImage} align="end" labels={labels} />
+        ) : null}
+        {text !== '' ? (
+          <div className="dsdr-fallback-user-row">
+            <div className="dsdr-fallback-user-bubble">{text}</div>
+            <button type="button" className="dsdr-fallback-user-copy" title={t('review.copy')} onClick={onCopy}>
+              {copied ? t('review.copied') : <IconCopy />}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function IconCopy() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </svg>
+  )
+}
+
+/**
+ * User-node renderer shadow: carried review packages render as a card;
+ * everything else renders as a native-look bubble.
+ */
+function UserReviewNodeView(props: UserReviewNodeProps) {
+  const content = useMemo(() => props.node.data.content as readonly UserBlock[], [props.node.data.content])
+  const text = useMemo(() => userMessageText(content), [content])
+  const images = useMemo(
+    () => content.filter((b): b is UserBlock & { attachment: ImageAttachmentRef } => b.type === 'image' && b.attachment !== undefined),
+    [content],
+  )
+  const pkg = useMemo(() => (isReviewPackageText(text) ? parseReviewPackage(text) : null), [text])
+  if (pkg) {
+    return <ReviewPackageCard pkg={pkg} cwd={props.cwd} t={props.t} />
+  }
+  return <FallbackUserBubble text={text} images={images} loadImage={props.loadImage} t={props.t} />
+}
+
+// ---------------------------------------------------------------------------
 // Composer dock (session scope): pending inline comments float above the
 // input box, Codex-style — hover the pill to preview, click send to inject.
 // ---------------------------------------------------------------------------
@@ -1950,13 +2227,15 @@ function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, 
   }, [cwd, pending.cwd])
 
   const comments = pending.cwd === cwd ? pending.comments : []
-  const sentSet = new Set(pending.sentCommentIds)
+  const sentSnap = useSyncExternalStore(sentStore.subscribe, sentStore.getSnapshot)
+  const sent = (cwd && sentSnap[cwd]) || { sentCommentIds: [], sentReviewKey: null }
+  const sentSet = new Set(sent.sentCommentIds)
   const unsentComments = comments.filter((c) => !sentSet.has(c.id))
   const reviewKey =
     pending.review?.ok && (pending.review.findings.length > 0 || pending.review.verdict)
       ? `${pending.review.verdict ?? ''}:${pending.review.findings.length}:${pending.review.findings[0]?.title ?? ''}`
       : null
-  const reviewPending = reviewKey !== null && reviewKey !== pending.sentReviewKey
+  const reviewPending = reviewKey !== null && reviewKey !== sent.sentReviewKey
   const hasPending = unsentComments.length > 0 || reviewPending
 
   useEffect(() => {
@@ -1967,7 +2246,7 @@ function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, 
 
   /** Compose the full review package: comments + their diff hunks + AI verdict. */
   const composeCarriedMessage = (): string => {
-    const lines: string[] = ['请处理以下针对当前工作区的行内评审评论（Address the inline comments，保持改动范围最小）：', '']
+    const lines: string[] = ['请处理以下针对当前工作区的行内评审评论（Address the inline comments，保持改动范围最小）：', `工作区：${cwd}`, '']
     const byPath = new Map<string, ReviewComment[]>()
     for (const c of unsentComments) {
       const list = byPath.get(c.path)
@@ -2001,12 +2280,16 @@ function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, 
 
   // Codex-style auto-carry: when the user submits a message while comments are
   // pending, queue the full review package right behind it (no send button).
-  /** Mark the carried items as sent so they are never re-sent. */
+  /** Mark the carried items as sent so they are never re-sent (persisted per cwd). */
   const markSent = () => {
+    if (!cwd) return
     const carriedIds = unsentComments.map((c) => c.id)
-    pendingCommentsStore.update((d) => {
-      d.sentCommentIds = [...new Set([...d.sentCommentIds, ...carriedIds])]
-      if (reviewPending) d.sentReviewKey = reviewKey
+    sentStore.update((d) => {
+      const prev = d[cwd] ?? { sentCommentIds: [], sentReviewKey: null }
+      d[cwd] = {
+        sentCommentIds: [...new Set([...prev.sentCommentIds, ...carriedIds])],
+        sentReviewKey: reviewPending ? reviewKey : prev.sentReviewKey,
+      }
     })
   }
 
@@ -2015,14 +2298,9 @@ function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, 
   const userCount = useSession((s) => s.nodes.filter((n) => n.kind === 'user').length)
   const prevRunning = useRef(running)
   const prevUserCount = useRef(userCount)
-  useEffect(() => {
-    const turnStarted = prevRunning.current === false && running === true
-    prevRunning.current = running
-    const newUserMsg = prevUserCount.current < userCount
-    prevUserCount.current = userCount
-    const phaseHit = phase === 'submitting' || phase === 'adjudicating'
+  /** Send the pending review package now (dock button or auto-carry). */
+  const carry = () => {
     if (!hasPending || carrying.current) return
-    if (!turnStarted && !newUserMsg && !phaseHit) return
     carrying.current = true
     void injectToSession(sessions, sessionId, composeCarriedMessage()).then((outcome) => {
       if (outcome !== 'failed') markSent()
@@ -2030,6 +2308,17 @@ function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, 
       setCarryFlash(outcome === 'sent' ? t('review.sentToAgent') : outcome === 'copied' ? t('review.copiedFallback') : t('review.sendFailed'))
       setTimeout(() => setCarryFlash(null), 3200)
     })
+  }
+
+  useEffect(() => {
+    const turnStarted = prevRunning.current === false && running === true
+    prevRunning.current = running
+    const newUserMsg = prevUserCount.current < userCount
+    prevUserCount.current = userCount
+    const phaseHit = phase === 'submitting' || phase === 'adjudicating'
+    if (!hasPending) return
+    if (!turnStarted && !newUserMsg && !phaseHit) return
+    carry()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, userCount, phase, hasPending])
 
@@ -2055,6 +2344,9 @@ function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, 
         </span>
         {carryFlash ? <span className="dsdr-dock-flash">{carryFlash}</span> : null}
         <span className="dsdr-spacer" />
+        <button type="button" className="dsdr-btn dsdr-btn-primary dsdr-dock-send" disabled={carrying.current} onClick={carry}>
+          {t('review.sendNow')}
+        </button>
         <button type="button" className="dsdr-dock-close" aria-label={t('comment.cancel')} onClick={() => setDismissed(true)}>
           <IconX />
         </button>
@@ -2188,6 +2480,16 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   )
 
   const rounds = useMemo(() => (snapshot ? collectSessionRounds(snapshot.nodes) : []), [snapshot])
+  // Last user-message timestamp — the Last-turn scope falls back to files whose
+  // mtime is after it when the session log has no recorded diff (bash edits).
+  const lastUserTime = useMemo(() => {
+    if (!snapshot) return 0
+    let t = 0
+    for (const n of snapshot.nodes) {
+      if (n.kind === 'user' && n.time > t) t = n.time
+    }
+    return t
+  }, [snapshot])
   // Diagnostics for the empty session-changes state: what the snapshot scan found.
   const sessionScan = useMemo(() => {
     if (!snapshot) return null
@@ -2411,22 +2713,28 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
         return stagedFiles
       case 'branch':
         return baseStatus?.files ?? []
-      case 'last-turn':
-        if (lastRoundPaths.size === 0) return []
-        return files.filter((f) => {
+      case 'last-turn': {
+        if (files.length === 0) return []
+        const suffixMatch = (f: DiffFile): boolean => {
+          if (lastRoundPaths.size === 0) return false
           if (lastRoundPaths.has(f.path) || lastRoundPaths.has(baseName(f.path))) return true
-          // Session paths may be workspace-root relative or absolute (the repo can
-          // be a subdirectory of the workspace) — match any suffix form.
           const suffix = `/${f.path}`
           for (const p of lastRoundPaths) {
             if (p.endsWith(suffix)) return true
           }
           return false
+        }
+        return files.filter((f) => {
+          if (suffixMatch(f)) return true
+          // Git fallback: changed after the last user message (session log may
+          // have no diff data, e.g. terminal-driven edits).
+          return lastUserTime > 0 && f.mtime >= lastUserTime - 5000
         })
+      }
       default:
         return files
     }
-  }, [scope, unstagedFiles, stagedFiles, baseStatus, files, lastRoundPaths])
+  }, [scope, unstagedFiles, stagedFiles, baseStatus, files, lastRoundPaths, lastUserTime])
 
   /** Scopes where file/hunk accept·revert·unstage and commit/push make sense. */
   const allowActions = scope !== 'branch' && scope !== 'commit'
@@ -2994,6 +3302,11 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               {sessionScan && sessionScan.results > 0 ? (
                 <div className="dsdr-nodiff">{t('review.sessionScan', { results: sessionScan.results, diff: sessionScan.diffCards, path: sessionScan.pathOnly })}</div>
               ) : null}
+              <div className="dsdr-empty-actions">
+                <button type="button" className="dsdr-btn" onClick={() => setTab('workspace')}>
+                  {t('review.goWorkspace')}
+                </button>
+              </div>
             </div>
           ) : (
             <div className="dsdr-body">
@@ -3687,6 +4000,20 @@ export function apply(ctx: ClientContext): void {
         inject: () => ({ sessions: ctx.sessions }),
       },
       DiffReviewComposerDock,
+    ),
+  )
+  // The carried review package renders in the transcript as a Codex-style
+  // card: shadow the shell's user-node renderer (priority -1 = lowest wins)
+  // and re-render non-package messages with a native-look bubble.
+  ctx.slots.inject('conversation.chat.node', () =>
+    ctx.slots.register(
+      {
+        name: 'conversation.chat.node',
+        key: 'user',
+        priority: -1,
+        locale: LOCALE_NS,
+      },
+      UserReviewNodeView,
     ),
   )
   // The plugin's own settings tab inside 设置 → 插件 (not the General section).

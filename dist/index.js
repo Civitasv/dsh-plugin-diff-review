@@ -177,6 +177,11 @@ async function collectDiff(cwd, change) {
   const staged = untracked ? false : change.xy[0] !== " " && change.xy[0] !== "?";
   const unstaged = untracked ? true : change.xy[1] !== " " && change.xy[1] !== "?";
   const status = untracked ? "??" : change.xy.trim();
+  let mtime = 0;
+  try {
+    mtime = statSync(resolve(cwd, change.path)).mtimeMs;
+  } catch {
+  }
   return {
     path: change.path,
     origPath: change.origPath,
@@ -189,7 +194,8 @@ async function collectDiff(cwd, change) {
     deleted: counts.deleted,
     diff,
     binary,
-    hunks
+    hunks,
+    mtime
   };
 }
 async function collectStatus(cwd) {
@@ -255,6 +261,11 @@ async function collectBaseStatus(cwd, base) {
     const diff = diffRes.stdout;
     const binary = diff.includes("Binary files");
     const counts = binary ? { added: 0, deleted: 0 } : countLines(diff);
+    let mtime = 0;
+    try {
+      mtime = statSync(resolve(cwd, path)).mtimeMs;
+    } catch {
+    }
     files.push({
       path,
       xy: `${status} `,
@@ -266,7 +277,8 @@ async function collectBaseStatus(cwd, base) {
       deleted: counts.deleted,
       diff: binary ? "Binary files differ" : diff,
       binary,
-      hunks: []
+      hunks: [],
+      mtime
     });
   }
   return { isRepo: true, branch, upstream: null, ahead: 0, behind: 0, files };

@@ -36,6 +36,7 @@
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-attachment",
         "@deepseek-ai/dsh-api-remotes"
       ],
       "immediately": true
@@ -45,7 +46,8 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "test:git": "node scripts/git-semantics-test.mjs",
-    "test:session": "node scripts/session-extract-test.mjs"
+    "test:session": "node scripts/session-extract-test.mjs",
+    "test:package": "node scripts/review-package-test.mjs"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -53,8 +55,10 @@
     "diff": "^9.0.0"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-attachment": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-attachment": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-layout": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.6",
