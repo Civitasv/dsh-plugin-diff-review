@@ -24,12 +24,12 @@ import type { CSSProperties, ReactElement, ReactNode } from 'react'
 import { diffLines } from 'diff'
 import { EditorState, type Extension } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { css } from '@codemirror/lang-css'
 import { html } from '@codemirror/lang-html'
 import { javascript } from '@codemirror/lang-javascript'
 import { json } from '@codemirror/lang-json'
 import { markdown } from '@codemirror/lang-markdown'
+import { oneDark } from '@codemirror/theme-one-dark'
 import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
 import type { ClientContext, ISessions, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -966,12 +966,12 @@ const REVIEW_CSS = `
 .dsdr-files-toolbar{display:flex;align-items:center;padding:9px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform)}
 .dsdr-files-search{width:100%;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);padding:7px 10px;font:inherit;font-size:12px;line-height:18px}
 .dsdr-files-search:focus{outline:none;border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-brand-primary) 15%,transparent)}
-.dsdr-files-content{display:grid;min-height:0;flex:1}
-.dsdr-files-list{overflow:auto;border-right:1px solid var(--dsw-alias-border-l1);padding:8px 6px;background:var(--dsw-alias-bg-layer-1)}
+.dsdr-files-content{display:grid;min-height:0;flex:1;overflow:hidden}
+.dsdr-files-list{min-height:0;overflow:auto;overscroll-behavior:contain;border-right:1px solid var(--dsw-alias-border-l1);padding:8px 6px;background:var(--dsw-alias-bg-layer-1)}
 .dsdr-files-item{display:flex;width:100%;box-sizing:border-box;border:0;border-radius:6px;background:transparent;padding:6px 9px;color:var(--dsw-alias-label-secondary);font:11px/17px var(--dsw-font-mono);text-align:left;cursor:pointer}
 .dsdr-files-item:hover,.dsdr-files-item-active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsdr-files-menu{position:fixed;z-index:80;display:flex;min-width:180px;flex-direction:column;gap:2px;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-files-menu button{border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);padding:8px 10px;text-align:left;font:12px var(--dsw-font-sans);cursor:pointer}.dsdr-files-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.dsdr-files-editor{display:flex;min-width:0;flex-direction:column;background:var(--dsw-alias-bg-layer-1)}.dsdr-files-path{padding:10px 14px;color:var(--dsw-alias-label-secondary);font:12px/18px var(--dsw-font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform)}
+.dsdr-files-editor{display:flex;min-width:0;min-height:0;flex-direction:column;background:var(--dsw-alias-bg-layer-1)}.dsdr-files-path{padding:10px 14px;color:var(--dsw-alias-label-secondary);font:12px/18px var(--dsw-font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform)}
 .dsdr-code-editor{min-height:0;flex:1;overflow:hidden;background:var(--dsw-alias-bg-layer-1)}.dsdr-cm-host{height:100%;min-height:0}.dsdr-cm-host .cm-editor{height:100%;background:var(--dsw-alias-bg-layer-1)}.dsdr-cm-host .cm-scroller{overflow:auto;font-family:var(--dsw-font-mono);line-height:21px}.dsdr-cm-host .cm-content{padding:14px 16px;min-height:100%;caret-color:var(--dsw-alias-label-primary)}.dsdr-cm-host .cm-gutters{border-right:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-tertiary);padding-top:14px}.dsdr-cm-host .cm-lineNumbers .cm-gutterElement{min-width:42px;padding:0 10px 0 8px}.dsdr-cm-host .cm-activeLine,.dsdr-cm-host .cm-activeLineGutter{background:color-mix(in srgb,var(--dsw-alias-interactive-bg-hover) 70%,transparent)}.dsdr-cm-host .cm-selectionBackground,.dsdr-cm-host ::selection{background:rgba(91,140,255,.42)!important}.dsdr-cm-host .cm-focused{outline:none}
 .dsdr-image-preview{display:flex;align-items:center;justify-content:center;min-height:0;flex:1;overflow:auto;padding:24px;background:var(--dsw-alias-bg-layer-1)}.dsdr-image-preview img{max-width:100%;max-height:100%;object-fit:contain;box-shadow:var(--dsw-shadow-lv2)}.dsdr-files-unavailable{display:flex;align-items:center;justify-content:center;min-height:0;flex:1;color:var(--dsw-alias-label-tertiary);font-size:13px}
 .dsdr-files-actions{display:flex;align-items:center;gap:6px;padding:8px 10px;border-top:1px solid var(--dsw-alias-border-l1)}
@@ -2143,7 +2143,7 @@ function CodeEditor({ path, value, onChange }: { path: string; value: string; on
           highlightActiveLine(),
           highlightActiveLineGutter(),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          oneDark,
           language,
           CODE_MIRROR_THEME,
           EditorView.updateListener.of((update) => {
