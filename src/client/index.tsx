@@ -908,6 +908,7 @@ const REVIEW_CSS = `
 .dsdr-sel-option-active{color:var(--dsw-alias-label-primary)}
 .dsdr-sel-option-mark{flex:none;width:14px;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary)}
 .dsdr-sel-option-label{flex:1;min-width:0;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.dsdr-scope-select .dsdr-sel-menu>li{position:relative}.dsdr-scope-commit-arrow{margin-left:auto;color:var(--dsw-alias-label-tertiary);font-size:15px;line-height:1}.dsdr-scope-commit-menu{position:absolute;z-index:1;top:-4px;left:calc(100% + 5px);display:flex;min-width:250px;max-width:min(360px,calc(100vw - 48px));max-height:300px;overflow:auto;flex-direction:column;gap:1px;margin:0;padding:4px;list-style:none;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-scope-commit-menu button{display:flex;align-items:center;gap:7px;width:100%;min-height:30px;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-primary);padding:5px 8px;text-align:left;font:12px/18px var(--dsw-font-sans);cursor:pointer}.dsdr-scope-commit-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}.dsdr-scope-commit-short{flex:none;font-family:var(--dsw-font-mono);color:var(--dsw-alias-label-secondary)}.dsdr-scope-commit-subject{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.dsdr-scope-commit-empty{display:block;padding:8px;color:var(--dsw-alias-label-tertiary);font-size:12px}
 .dsdr-view-toggle{display:flex;gap:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;padding:2px;flex:none}
 .dsdr-view-btn{box-sizing:border-box;min-height:22px;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:1px 8px;font:inherit;font-size:11px;line-height:16px}
 .dsdr-view-btn:hover{color:var(--dsw-alias-label-secondary)}
@@ -1092,7 +1093,7 @@ const zh = {
   'review.lastTurnEmpty': '最后一轮没有记录到文件修改 —— 终端命令（bash）改文件不会计入会话记录；可切到「全部」查看 git 变更',
   'scope.base': '基线分支',
   'scope.branchReadonly': '分支范围只读（对比 merge-base，不提供采纳/丢弃）',
-  'review.selectCommit': '从左侧选择提交查看 diff',
+  'review.selectCommit': '请选择提交 revision',
   'review.sendToAgent': '发送给代理',
   'review.sendTitle': '发送行内评论给代理',
   'review.sendHint': '评论会作为评审指引注入当前会话（Address the inline comments）。发送失败时退化为复制文本。',
@@ -1246,7 +1247,7 @@ const en: Record<keyof typeof zh, string> = {
   'review.lastTurnEmpty': 'No file changes recorded for the last turn — terminal commands (bash) that edit files are not tracked in the session log; switch to "All" to see git changes',
   'scope.base': 'Base branch',
   'scope.branchReadonly': 'Branch scope is read-only (merge-base diff; no accept/revert)',
-  'review.selectCommit': 'Select a commit from the left to view its diff',
+  'review.selectCommit': 'Select a committed revision',
   'review.sendToAgent': 'Send to agent',
   'review.sendTitle': 'Send inline comments to the agent',
   'review.sendHint': 'Comments are injected into the current session as review guidance (Address the inline comments). Falls back to copyable text if sending fails.',
@@ -2034,6 +2035,57 @@ function ThemeSelect({
                 <span className="dsdr-sel-option-label">{option.label}</span>
               </button>
             </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
+/** Scope picker with Codex-style nested revision selection for committed diffs. */
+function ReviewScopeSelect({ scope, history, t, onSelectScope, onSelectCommit }: { scope: WorkspaceScope; history: CommitInfo[]; t: CardT; onSelectScope: (scope: WorkspaceScope) => void; onSelectCommit: (commit: CommitInfo) => void }) {
+  const [open, setOpen] = useState(false)
+  const [commitOpen, setCommitOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const current = SCOPE_OPTIONS.find((option) => option.id === scope)
+
+  useEffect(() => {
+    if (!open) return
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) setOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [open])
+
+  return (
+    <div className="dsdr-sel dsdr-scope-select" ref={rootRef}>
+      <button type="button" className="dsdr-sel-trigger" aria-haspopup="listbox" aria-expanded={open} aria-label={t('scope.label')} onClick={() => { setOpen((value) => !value); setCommitOpen(false) }}>
+        <span className="dsdr-sel-value">{current ? t(current.label) : t('scope.commit')}</span>
+        <IconChevronDown />
+      </button>
+      {open ? (
+        <ul className="dsdr-sel-menu" role="listbox" aria-label={t('scope.label')}>
+          {SCOPE_OPTIONS.map((option) => option.id === 'commit' ? (
+            <li key={option.id} role="none" onPointerEnter={() => setCommitOpen(true)} onPointerLeave={() => setCommitOpen(false)}>
+              <button type="button" role="option" aria-selected={scope === option.id} className={`dsdr-sel-option${scope === option.id ? ' dsdr-sel-option-active' : ''}`} onClick={() => setCommitOpen((value) => !value)}>
+                <span className="dsdr-sel-option-mark">{scope === option.id ? <IconCheck /> : null}</span>
+                <span className="dsdr-sel-option-label">{t(option.label)}</span>
+                <span className="dsdr-scope-commit-arrow" aria-hidden="true">›</span>
+              </button>
+              {commitOpen ? <ul className="dsdr-scope-commit-menu" role="listbox" aria-label={t('review.history')}>
+                {history.length === 0 ? <li className="dsdr-scope-commit-empty">No commits on branch</li> : history.map((commit) => <li key={commit.hash} role="none"><button type="button" role="option" onClick={() => { onSelectCommit(commit); setOpen(false) }} title={commit.subject}><span className="dsdr-scope-commit-short">{commit.short}</span><span className="dsdr-scope-commit-subject">{commit.subject}</span></button></li>)}
+              </ul> : null}
+            </li>
+          ) : (
+            <li key={option.id} role="none"><button type="button" role="option" aria-selected={scope === option.id} className={`dsdr-sel-option${scope === option.id ? ' dsdr-sel-option-active' : ''}`} onClick={() => { onSelectScope(option.id); setOpen(false) }}><span className="dsdr-sel-option-mark">{scope === option.id ? <IconCheck /> : null}</span><span className="dsdr-sel-option-label">{t(option.label)}</span></button></li>
           ))}
         </ul>
       ) : null}
@@ -3931,8 +3983,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
             {tab === 'workspace' && status?.isRepo ? (
               <span className="dsdr-scope">
                 {repos.length > 1 ? <ThemeSelect ariaLabel={t('repo.label')} value={repoPath ?? activeCwd ?? ''} options={repos.map((r) => ({ value: r.path, label: `${baseName(r.path)}${r.branch ? ` (${r.branch})` : ''}` }))} onChange={(v) => { setRepoPath(v); setSelected(null); setReview(null) }} /> : null}
-                <ThemeSelect ariaLabel={t('scope.label')} value={scope} options={SCOPE_OPTIONS.map((s) => ({ value: s.id, label: t(s.label) }))} onChange={(v) => { setScope(v as WorkspaceScope); setSelected(null); setSelectedCommit(null); setSelectedCommitFile(null); setCommitDiff(null) }} />
-                {scope === 'commit' ? <ThemeSelect ariaLabel={t('review.history')} value={selectedCommit?.hash ?? ''} options={[{ value: '', label: t('review.selectCommit') }, ...history.map((commit) => ({ value: commit.hash, label: `${commit.short} · ${commit.subject}` }))]} onChange={(hash) => { const commit = history.find((item) => item.hash === hash); if (commit) selectCommit(commit) }} /> : null}
+                <ReviewScopeSelect scope={scope} history={history} t={t} onSelectScope={(nextScope) => { setScope(nextScope); setSelected(null); setSelectedCommit(null); setSelectedCommitFile(null); setCommitDiff(null) }} onSelectCommit={(commit) => { setScope('commit'); selectCommit(commit) }} />
                 {scope === 'branch' ? <ThemeSelect ariaLabel={t('scope.base')} value={baseBranch ?? ''} options={branches.map((b) => ({ value: b, label: b }))} onChange={setBaseBranch} /> : null}
               </span>
             ) : null}
@@ -4279,7 +4330,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                   <div className="dsdr-empty">{t('review.lastTurnEmpty')}</div>
                 )
               ) : null}
-              {(scope === 'all' || scope === 'commit') && history.length > 0 ? (
+              {scope === 'all' && history.length > 0 ? (
                 <>
                   <div className="dsdr-section">{t('review.history')}</div>
                   <div className="dsdr-timeline">
