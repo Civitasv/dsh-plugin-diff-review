@@ -742,15 +742,19 @@ const REVIEW_CSS = `
 .dsdr-pr-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-pr-meta{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
 .dsdr-pr-text{font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere}
-.dsdr-dock{box-sizing:border-box;display:flex;flex-direction:column;gap:2px;width:100%;max-width:var(--dsh-composer-card-max-width, 780px);margin:0 auto calc(-1 * var(--dsh-composer-stack-gap, 6px) - 8px);padding:8px 16px;background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2-darkmode-thin);border-bottom:none;border-radius:22px 22px 0 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary)}
-.dsdr-dock-head{display:flex;align-items:center;gap:6px;min-height:22px}
+.dsdr-dock{box-sizing:border-box;position:relative;display:flex;flex-direction:column;gap:2px;width:100%;max-width:var(--dsh-composer-card-max-width, 780px);margin:0 auto calc(-1 * var(--dsh-composer-stack-gap, 6px) - 8px);padding:8px 16px;background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2-darkmode-thin);border-bottom:none;border-radius:22px 22px 0 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary)}
+.dsdr-dock-head{display:flex;align-items:center;gap:6px;min-height:22px;margin:-8px -16px;padding:8px 16px;border-radius:22px 22px 0 0;cursor:pointer}
+.dsdr-dock-head:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-dock-icon{display:inline-flex;color:var(--dsw-alias-button-info-fill)}
 .dsdr-dock-count{font-weight:600;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary);white-space:nowrap}
 .dsdr-dock-flash{color:var(--dsw-alias-state-success-primary);font-size:11px;white-space:nowrap}
-.dsdr-dock-send{min-height:22px;padding:1px 10px;font-size:11px;line-height:16px}
+.dsdr-dock-send-hint{flex:none;font-size:11px;color:var(--dsw-alias-button-info-fill);visibility:hidden;white-space:nowrap}
+.dsdr-dock-head:hover .dsdr-dock-send-hint{visibility:visible}
 .dsdr-dock-close{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:0}
 .dsdr-dock-close:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsdr-dock-list{display:flex;flex-direction:column;gap:2px;padding-top:4px;margin-top:2px;max-height:168px;overflow-y:auto}
+.dsdr-dock-list{position:absolute;left:0;right:0;bottom:100%;display:flex;flex-direction:column;gap:2px;padding:8px;max-height:220px;overflow-y:auto;background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2-darkmode-thin);border-bottom:none;border-radius:22px 22px 0 0;box-shadow:var(--dsw-shadow-lv3);z-index:10;animation:dsdr-dock-pop .12s ease-out}
+@keyframes dsdr-dock-pop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.dsdr-dock-list-hint{padding:4px 8px 2px;font-size:10px;color:var(--dsw-alias-label-tertiary);text-align:center;border-top:1px solid var(--dsw-alias-border-l1);margin-top:2px}
 .dsdr-dock-item{display:flex;flex-direction:column;gap:1px;text-align:left;border:0;background:transparent;border-radius:7px;padding:4px 8px;cursor:pointer;font:inherit}
 .dsdr-dock-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-dock-loc{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono);white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
@@ -975,11 +979,11 @@ const zh = {
   'repo.label': '仓库',
   'review.dockComments': '行内评论 {n} 条',
   'review.dockVerdict': '评审结论待发送',
-  'review.sendNow': '发送评论',
+  'review.dockSend': '点击发送评论',
+  'review.dockSendHint': '点击顶栏立即发送评论',
   'review.copiedFallback': '会话不可用，评论已复制（请粘贴发送）',
   'review.sendFailed': '评论发送失败',
   'review.dockJump': '点击在评审面板中打开对应变更',
-  'review.dockHint': '随下一条消息自动附带（含 diff 与 AI 评审结论）',
   'review.cardTitle': '行内评审',
   'review.cardComments': '{n} 条评论',
   'review.cardVerdict': 'AI 评审结论',
@@ -1119,11 +1123,11 @@ const en: Record<keyof typeof zh, string> = {
   'repo.label': 'Repo',
   'review.dockComments': '{n} inline comments',
   'review.dockVerdict': 'verdict pending',
-  'review.sendNow': 'Send comments',
+  'review.dockSend': 'Click to send',
   'review.copiedFallback': 'Session unavailable — comments copied (paste to send)',
   'review.sendFailed': 'Failed to send comments',
   'review.dockJump': 'Open the matching change in the review panel',
-  'review.dockHint': 'Auto-carried with your next message (diff + AI verdict included)',
+  'review.dockSendHint': 'Click the strip above to send comments now',
   'review.cardTitle': 'Inline review',
   'review.cardComments': '{n} comments',
   'review.cardVerdict': 'AI review verdict',
@@ -2336,18 +2340,39 @@ function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, 
 
   return (
     <div className="dsdr-dock" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      <div className="dsdr-dock-head">
+      <div
+        className="dsdr-dock-head"
+        role="button"
+        tabIndex={0}
+        title={t('review.dockSend')}
+        onClick={carry}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            carry()
+          }
+        }}
+      >
         <span className="dsdr-dock-icon"><IconComment /></span>
-        <span className="dsdr-dock-count" title={t('review.dockHint')}>
-          {t('review.dockComments', { n: unsentComments.length })}
-          {reviewPending ? ` · ${t('review.dockVerdict')}` : ''}
-        </span>
-        {carryFlash ? <span className="dsdr-dock-flash">{carryFlash}</span> : null}
+        {carryFlash ? (
+          <span className="dsdr-dock-flash">{carryFlash}</span>
+        ) : (
+          <span className="dsdr-dock-count">
+            {t('review.dockComments', { n: unsentComments.length })}
+            {reviewPending ? ` · ${t('review.dockVerdict')}` : ''}
+          </span>
+        )}
         <span className="dsdr-spacer" />
-        <button type="button" className="dsdr-btn dsdr-btn-primary dsdr-dock-send" disabled={carrying.current} onClick={carry}>
-          {t('review.sendNow')}
-        </button>
-        <button type="button" className="dsdr-dock-close" aria-label={t('comment.cancel')} onClick={() => setDismissed(true)}>
+        <span className="dsdr-dock-send-hint">{t('review.dockSend')}</span>
+        <button
+          type="button"
+          className="dsdr-dock-close"
+          aria-label={t('comment.cancel')}
+          onClick={(e) => {
+            e.stopPropagation()
+            setDismissed(true)
+          }}
+        >
           <IconX />
         </button>
       </div>
@@ -2365,6 +2390,7 @@ function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, 
               <span className="dsdr-dock-text">{comment.text}</span>
             </button>
           ))}
+          <span className="dsdr-dock-list-hint">{t('review.dockSendHint')}</span>
         </div>
       ) : null}
     </div>
