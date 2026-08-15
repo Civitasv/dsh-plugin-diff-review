@@ -11,7 +11,7 @@
 安装稳定版本：
 
 ```sh
-dsh plugin --profile web add github:Civitasv/dsh-plugin-diff-review#v0.1.0
+dsh plugin --profile web add github:Civitasv/dsh-plugin-diff-review#v0.1.1
 ```
 
 想直接使用最新版本：
