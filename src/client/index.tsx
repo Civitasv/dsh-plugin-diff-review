@@ -2211,7 +2211,7 @@ function FileTreeGlyph({ path }: { path: string }) {
   return <span className={`dsdr-tree-file-icon${image ? ' dsdr-tree-file-icon-image' : code ? ' dsdr-tree-file-icon-code' : ''}`} aria-hidden="true">{label}</span>
 }
 
-function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat, treeWidth, onTreeWidthChange, docked }: { cwd: string; t: CardT; collapsed: ReadonlySet<string>; onToggleDir: (path: string) => void; target: string | null; onAddToChat: (path: string) => void; treeWidth: number; onTreeWidthChange: (width: number) => void; docked: boolean }) {
+function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onActivateFile, onAddToChat, treeWidth, onTreeWidthChange, docked }: { cwd: string; t: CardT; collapsed: ReadonlySet<string>; onToggleDir: (path: string) => void; target: string | null; onActivateFile: (path: string) => void; onAddToChat: (path: string) => void; treeWidth: number; onTreeWidthChange: (width: number) => void; docked: boolean }) {
   const [files, setFiles] = useState<WorkspaceFileEntry[]>([])
   const [filter, setFilter] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
@@ -2281,7 +2281,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat, t
             activePath={selected}
             renderLeaf={(leaf) => (
               <div className={'dsdr-files-item' + (selected === leaf.path ? ' dsdr-files-item-active' : '')} onContextMenu={(event) => { event.preventDefault(); setMenu({ path: leaf.path, x: event.clientX, y: event.clientY }) }} title={leaf.path}>
-                <button type="button" className="dsdr-files-item-main" onClick={() => void open(leaf.path)}><FileTreeGlyph path={leaf.path} /><span className="dsdr-files-item-name">{leaf.name}</span></button>
+                <button type="button" className="dsdr-files-item-main" onClick={() => { onActivateFile(leaf.path); void open(leaf.path) }}><FileTreeGlyph path={leaf.path} /><span className="dsdr-files-item-name">{leaf.name}</span></button>
                 <button type="button" className="dsdr-files-item-menu" aria-label={`Actions for ${leaf.name}`} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ path: leaf.path, x: rect.left, y: rect.bottom + 4 }) }}>•••</button>
               </div>
             )}
@@ -3544,6 +3544,18 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     setFilesTarget(path)
     setSurface(path)
   }
+  const replaceActiveFilesTab = (path: string) => {
+    if (surface === 'review') {
+      openInFilesTab(path)
+      return
+    }
+    setOpenFileTabs((previous) => {
+      const withoutActive = previous.filter((item) => item !== surface)
+      return withoutActive.includes(path) ? withoutActive : [...withoutActive, path]
+    })
+    setFilesTarget(path)
+    setSurface(path)
+  }
   const closeFilesTab = (path: string) => {
     setOpenFileTabs((previous) => {
       const next = previous.filter((item) => item !== path)
@@ -3820,7 +3832,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
           </div>
         ) : null}
         {surface !== 'review' ? (
-          <FilesWorkspace cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} target={filesTarget} treeWidth={fileTreeWidth} onTreeWidthChange={setFileTreeWidth} docked={docked} onAddToChat={(path) => {
+          <FilesWorkspace cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} target={filesTarget} onActivateFile={replaceActiveFilesTab} treeWidth={fileTreeWidth} onTreeWidthChange={setFileTreeWidth} docked={docked} onAddToChat={(path) => {
             composerDraftStore.update((draft) => {
               draft.sessionId = currentId ?? null
               draft.text = `请查看工作区文件：${path}`
