@@ -75,15 +75,13 @@ const OPEN_EDITOR_URL = 'open-editor/open'
 const STYLE_TAG = 'dsh-plugin-diff-review/review.css'
 
 /** Open state shared between the header trigger (session scope) and the overlay (root scope). */
-const overlayStore = createSnapshotStore<{ open: boolean; cwd: string | null; key: number; focus?: { path: string; line?: number; round?: number; tab?: 'session' | 'workspace' } | null }>({
+const overlayStore = createSnapshotStore<{ open: boolean; cwd: string | null; key: number; presentation: 'dock' | 'modal'; focus?: { path: string; line?: number; round?: number; tab?: 'session' | 'workspace' } | null }>({
   open: false,
   cwd: null,
   key: 0,
+  presentation: 'dock',
   focus: null,
 })
-
-/** Independently docked Last Turn viewer; it never takes over DSH's details panel. */
-const lastTurnDockStore = createSnapshotStore<{ open: boolean }>({ open: false })
 
 /**
  * Pending inline comments surfaced above the composer (Codex-style). The
@@ -684,9 +682,9 @@ const REVIEW_CSS = `
 .dsdr-trigger:hover,.dsdr-trigger:focus-visible{color:var(--dsw-alias-label-secondary)}
 .dsdr-label{margin-left:2px}
 .dsdr-count{background:var(--dsw-alias-fill-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;min-width:16px;text-align:center;font-size:11px;line-height:16px;padding:0 5px;font-variant-numeric:tabular-nums}
-.dsdr-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:32px}
-.dsdr-last-turn-dock{position:fixed;z-index:190;top:0;right:0;bottom:0;display:flex;min-width:280px;max-width:min(620px,70vw);background:var(--dsw-alias-bg-module-platform);border-left:1px solid var(--dsw-alias-border-l2);box-shadow:var(--dsw-shadow-lv3);pointer-events:auto}.dsdr-last-turn-dock .dsdr-file-tree-resize{position:absolute;left:0;top:0;bottom:0;height:auto;margin:0}.dsdr-last-turn-dock-body{display:flex;min-width:0;flex:1;flex-direction:column}.dsdr-last-turn-dock-head{display:flex;align-items:center;gap:8px;min-height:48px;padding:0 12px;border-bottom:1px solid var(--dsw-alias-border-l1)}.dsdr-last-turn-dock-title{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary)}.dsdr-last-turn-dock-meta{font-size:11px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}.dsdr-last-turn-dock-files{max-height:38%;overflow:auto;border-bottom:1px solid var(--dsw-alias-border-l1);padding:6px}.dsdr-last-turn-dock-diff{min-height:0;flex:1;overflow:auto}.dsdr-last-turn-dock-diff .dsdr-pre{font-size:11px;line-height:17px}.dsdr-last-turn-dock-diff .dsdr-line{padding:0 10px;gap:7px}.dsdr-last-turn-dock-diff .dsdr-line-num{width:32px;font-size:10px}.dsdr-last-turn-dock-empty{display:flex;align-items:center;justify-content:center;min-height:120px;padding:16px;color:var(--dsw-alias-label-tertiary);font-size:12px;text-align:center}
+.dsdr-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:32px}.dsdr-overlay-docked{justify-content:flex-end;padding:0;background:transparent;pointer-events:none}.dsdr-overlay-docked .dsdr-panel{pointer-events:auto}
 .dsdr-panel{box-sizing:border-box;position:relative;width:min(1120px,100%);height:min(720px,calc(100vh - 64px));max-width:calc(100vw - 64px);max-height:calc(100vh - 64px);background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;box-shadow:var(--dsw-shadow-lv3);display:flex;flex-direction:column;overflow:hidden}
+.dsdr-panel-docked{height:100vh!important;max-width:calc(100vw - 56px);max-height:none;border-width:0 0 0 1px;border-radius:0;box-shadow:var(--dsw-shadow-lv3)}.dsdr-panel-docked .dsdr-body{flex-direction:row-reverse}.dsdr-panel-docked .dsdr-files{border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-panel-docked .dsdr-file-tree-resize{margin-left:-2px;margin-right:-3px}.dsdr-files-content-docked>.dsdr-files-list{grid-column:3;border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-files-content-docked>.dsdr-file-tree-resize{grid-column:2}.dsdr-files-content-docked>.dsdr-files-editor{grid-column:1;grid-row:1}
 .dsdr-resize{position:absolute;z-index:5}
 .dsdr-resize-e{top:0;right:-3px;width:7px;height:100%;cursor:ew-resize}
 .dsdr-resize-s{bottom:-3px;left:0;width:100%;height:7px;cursor:ns-resize}
@@ -2188,7 +2186,7 @@ function FileTreeResizeHandle({ width, onResize }: { width: number; onResize: (w
   }} />
 }
 
-function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat, treeWidth, onTreeWidthChange }: { cwd: string; t: CardT; collapsed: ReadonlySet<string>; onToggleDir: (path: string) => void; target: string | null; onAddToChat: (path: string) => void; treeWidth: number; onTreeWidthChange: (width: number) => void }) {
+function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat, treeWidth, onTreeWidthChange, docked }: { cwd: string; t: CardT; collapsed: ReadonlySet<string>; onToggleDir: (path: string) => void; target: string | null; onAddToChat: (path: string) => void; treeWidth: number; onTreeWidthChange: (width: number) => void; docked: boolean }) {
   const [files, setFiles] = useState<WorkspaceFileEntry[]>([])
   const [filter, setFilter] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
@@ -2247,7 +2245,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat, t
   return (
     <section className="dsdr-files-workspace" aria-label={t('files.title')}>
       <div className="dsdr-files-toolbar"><input className="dsdr-files-search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={t('files.search')} autoFocus /></div>
-      <div className="dsdr-files-content" style={{ gridTemplateColumns: `${treeWidth}px 5px minmax(0, 1fr)` }}>
+      <div className={`dsdr-files-content${docked ? ' dsdr-files-content-docked' : ''}`} style={{ gridTemplateColumns: docked ? `minmax(0, 1fr) 5px ${treeWidth}px` : `${treeWidth}px 5px minmax(0, 1fr)` }}>
         <div className="dsdr-files-list">
           <FileTreeView
             nodes={tree}
@@ -2308,7 +2306,6 @@ function DiffReviewAction({ sessionId, useSessions, useSession, t }: DiffReviewA
         {changeCount > 0 ? <span className="dsdr-count">{changeCount}</span> : null}
         {open ? <span className="dsdr-count" aria-hidden="true">✓</span> : null}
       </button>
-      <button type="button" className="dsdr-trigger" title="Open Last Turn dock" aria-label="Open Last Turn dock" onClick={() => lastTurnDockStore.update((state) => { state.open = true })}>▣</button>
     </>
   )
 }
@@ -2391,90 +2388,6 @@ function FileTreeView<T>(props: {
         ),
       )}
     </>
-  )
-}
-
-/** A lightweight, persistent Last Turn viewer beside the active workspace. */
-function LastTurnDock({ sessions, t }: DiffReviewOverlayProps) {
-  const dock = useSyncExternalStore(lastTurnDockStore.subscribe, lastTurnDockStore.getSnapshot)
-  const sessionId = useSyncExternalStore(
-    useMemo(() => (notify: () => void) => sessions.list.subscribe(notify), [sessions]),
-    useMemo(() => () => sessions.list.getSnapshot().current, [sessions]),
-  )
-  const snapshot = useSyncExternalStore(
-    useMemo(() => (notify: () => void) => {
-      const binding = sessionId ? sessions.binding(sessionId) : undefined
-      return binding ? binding.session.subscribe(notify) : () => {}
-    }, [sessions, sessionId]),
-    useMemo(() => () => {
-      const binding = sessionId ? sessions.binding(sessionId) : undefined
-      return binding ? binding.session.getSnapshot() : null
-    }, [sessions, sessionId]),
-  )
-  const rounds = useMemo(() => (snapshot ? collectSessionRounds(snapshot.nodes) : []), [snapshot])
-  const last = rounds.at(-1) ?? null
-  const [selectedPath, setSelectedPath] = useState<string | null>(null)
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
-  const [width, setWidth] = useState(() => {
-    try {
-      const stored = Number(localStorage.getItem('dsdr-last-turn-dock-width'))
-      return Number.isFinite(stored) ? Math.max(280, Math.min(620, stored)) : 420
-    } catch {
-      return 420
-    }
-  })
-  useEffect(() => {
-    if (last?.changes.some((change) => change.path === selectedPath)) return
-    setSelectedPath(last?.changes[0]?.path ?? null)
-  }, [last, selectedPath])
-  useEffect(() => {
-    try { localStorage.setItem('dsdr-last-turn-dock-width', String(width)) } catch { /* non-fatal */ }
-  }, [width])
-  if (!dock.open) return null
-
-  const selected = last?.changes.find((change) => change.path === selectedPath) ?? null
-  const tree = buildFileTree(last?.changes ?? [], (change) => change.path)
-  const toggleDir = (path: string) => setCollapsed((previous) => {
-    const next = new Set(previous)
-    if (next.has(path)) next.delete(path)
-    else next.add(path)
-    return next
-  })
-  const openReview = () => {
-    const cwd = sessionId ? sessions.list.getSnapshot().byId[sessionId]?.cwd : undefined
-    if (!cwd) return
-    overlayStore.update((state) => { state.open = true; state.cwd = cwd; state.focus = selected ? { path: selected.path, round: last?.round, tab: 'session' } : null; state.key++ })
-  }
-
-  return (
-    <aside className="dsdr-last-turn-dock" style={{ width }} aria-label="Last Turn diff">
-      <FileTreeResizeHandle width={width} onResize={setWidth} />
-      <div className="dsdr-last-turn-dock-body">
-        <header className="dsdr-last-turn-dock-head">
-          <IconDiff />
-          <span className="dsdr-last-turn-dock-title">Last Turn</span>
-          <span className="dsdr-last-turn-dock-meta">{last ? `${last.changes.length} files` : 'No changes'}</span>
-          <span className="dsdr-spacer" />
-          <button type="button" className="dsdr-file-icon" title="Open review" aria-label="Open review" onClick={openReview}>↗</button>
-          <button type="button" className="dsdr-file-icon" title={t('review.close')} aria-label={t('review.close')} onClick={() => lastTurnDockStore.update((state) => { state.open = false })}><IconX /></button>
-        </header>
-        {last ? (
-          <>
-            <div className="dsdr-last-turn-dock-files">
-              <FileTreeView nodes={tree} collapsed={collapsed} onToggleDir={toggleDir} depth={0} renderLeaf={({ item: change, name }) => (
-                <button type="button" className={`dsdr-file${selected?.path === change.path ? ' dsdr-file-selected' : ''}`} onClick={() => setSelectedPath(change.path)} title={change.path}>
-                  <span className={`dsdr-chip ${change.hasDiff ? 'dsdr-chip-m' : 'dsdr-chip-u'}`}>{change.hasDiff ? 'M' : '·'}</span>
-                  <span className="dsdr-file-name">{name}</span>
-                </button>
-              )} />
-            </div>
-            <div className="dsdr-last-turn-dock-diff">
-              {selected?.hasDiff ? <pre className="dsdr-pre">{changeRows(selected).map((row, index) => <div key={index} className={`dsdr-line dsdr-line-${row.kind}`}><span className="dsdr-line-num">{index + 1}</span><span className="dsdr-line-text">{row.text || ' '}</span></div>)}</pre> : <div className="dsdr-last-turn-dock-empty">Select a changed file to view its diff.</div>}
-            </div>
-          </>
-        ) : <div className="dsdr-last-turn-dock-empty">No persisted file diff in the latest turn.</div>}
-      </div>
-    </aside>
   )
 }
 
@@ -3690,21 +3603,23 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       d.open = false
     })
   }
+  const docked = storeState.presentation === 'dock'
 
   return (
     <div
-      className="dsdr-overlay"
+      className={`dsdr-overlay${docked ? ' dsdr-overlay-docked' : ''}`}
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) close()
       }}
     >
       <div
-        className="dsdr-panel"
+        className={`dsdr-panel${docked ? ' dsdr-panel-docked' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label={t('review.title')}
-        style={{ width: `${prefs.width}px`, height: `${prefs.height}px`, ...diffStyleVars(prefs) } as CSSProperties}
+        style={{ width: `${prefs.width}px`, height: docked ? '100vh' : `${prefs.height}px`, ...diffStyleVars(prefs) } as CSSProperties}
       >
+        {docked ? <ResizeHandle mode="e" onResize={(dx) => prefsStore.update((d) => { d.width = Math.max(MIN_PANEL_W, Math.min(window.innerWidth - 56, d.width - dx)) })} /> : <>
         <ResizeHandle
           mode="e"
           onResize={(dx) =>
@@ -3721,6 +3636,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
             })
           }
         />
+        </>}
         <ResizeHandle
           mode="se"
           onResize={(dx, dy) =>
@@ -3797,7 +3713,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
           </div>
         ) : null}
         {surface === 'files' ? (
-          <FilesWorkspace cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} target={filesTarget} treeWidth={fileTreeWidth} onTreeWidthChange={setFileTreeWidth} onAddToChat={(path) => {
+          <FilesWorkspace cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} target={filesTarget} treeWidth={fileTreeWidth} onTreeWidthChange={setFileTreeWidth} docked={docked} onAddToChat={(path) => {
             composerDraftStore.update((draft) => {
               draft.sessionId = currentId ?? null
               draft.text = `请查看工作区文件：${path}`
@@ -4521,18 +4437,6 @@ export function apply(ctx: ClientContext): void {
         inject: () => ({ sessions: ctx.sessions }),
       },
       DiffReviewOverlay,
-    ),
-  )
-  ctx.slots.inject('shell.overlay', () =>
-    ctx.slots.register(
-      {
-        name: 'shell.overlay',
-        id: 'diff-review-last-turn-dock',
-        order: 9,
-        locale: LOCALE_NS,
-        inject: () => ({ sessions: ctx.sessions }),
-      },
-      LastTurnDock,
     ),
   )
   // Codex-style pending-comments strip at the TOP of the composer, styled as
