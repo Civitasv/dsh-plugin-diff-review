@@ -21,7 +21,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { ApplyHunkResponse, ApplyResponse, CommentsRequest, CommentsResponse, CommitDiffResponse, DiffFile, DiffHunk, GitResponse, HistoryResponse, PrComment, PrResponse, ReposResponse, ReviewComment, ReviewFinding, ReviewPriority, ReviewRequest, ReviewResponse, StatusResponse } from '../shared/types.ts'
+import type { ApplyHunkResponse, ApplyResponse, CommentsRequest, CommentsResponse, CommitDiffResponse, DiffFile, DiffHunk, FileReadResponse, FilesListResponse, FileWriteResponse, GitResponse, HistoryResponse, PrComment, PrResponse, ReposResponse, ReviewComment, ReviewFinding, ReviewPriority, ReviewRequest, ReviewResponse, StatusResponse, WorkspaceFileEntry } from '../shared/types.ts'
 
 export const name = 'diff-review'
 
@@ -50,6 +50,8 @@ export interface Config {
   prPath: string
   /** HTTP route listing git repos under a workspace. */
   reposPath: string
+  /** HTTP routes for the workspace-bounded Files workbench. */
+  filesPath: string
   /** Model used for AI review (both set); falls back to the session's current model. */
   reviewProvider: string
   reviewModel: string
@@ -70,6 +72,7 @@ export const Config: z<Config> = z.object({
   reviewPath: z.string().default('/diff-review/review'),
   prPath: z.string().default('/diff-review/pr'),
   reposPath: z.string().default('/diff-review/repos'),
+  filesPath: z.string().default('/diff-review/files'),
   reviewProvider: z.string().default(''),
   reviewModel: z.string().default(''),
   allowedRoots: z.array(z.string()).default([]),
@@ -1301,6 +1304,97 @@ function readQuery(req: import('node:http').IncomingMessage): URLSearchParams {
   return new URLSearchParams(req.url?.split('?')[1] ?? '')
 }
 
+// ---------------------------------------------------------------------------
+// Files workbench. Every file path stays under the validated workspace; this
+// deliberately exposes text files only and never follows symlinks.
+// ---------------------------------------------------------------------------
+
+const MAX_FILES_LIST = 2000
+const MAX_FILE_BYTES = 1024 * 1024
+const SKIPPED_FILE_DIRS = new Set(['.git', 'node_modules', '.DS_Store'])
+
+function resolveWorkspaceFile(cwd: string, raw: unknown): { path: string; abs: string } | { error: string } {
+  const safe = sanitizeRepoPath(raw)
+  if ('error' in safe) return safe
+  const abs = resolve(cwd, safe.path)
+  if (!abs.startsWith(cwd.endsWith(sep) ? cwd : cwd + sep)) return { error: 'path escapes workspace' }
+  return { path: safe.path.replace(/\\/g, '/'), abs }
+}
+
+function listWorkspaceFiles(cwd: string): FilesListResponse {
+  const files: WorkspaceFileEntry[] = []
+  let truncated = false
+  const walk = (dir: string, prefix: string, depth: number): void => {
+    if (depth > 12 || files.length >= MAX_FILES_LIST) {
+      truncated = true
+      return
+    }
+    let entries: import('node:fs').Dirent<string>[]
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (files.length >= MAX_FILES_LIST) {
+        truncated = true
+        return
+      }
+      if (entry.isSymbolicLink()) continue
+      if (entry.isDirectory()) {
+        if (!SKIPPED_FILE_DIRS.has(entry.name)) walk(join(dir, entry.name), `${prefix}${entry.name}/`, depth + 1)
+        continue
+      }
+      if (!entry.isFile()) continue
+      const abs = join(dir, entry.name)
+      try {
+        const stat = statSync(abs)
+        files.push({ path: `${prefix}${entry.name}`, size: stat.size, mtime: stat.mtimeMs })
+      } catch {
+        // A concurrently deleted file is simply absent from the listing.
+      }
+    }
+  }
+  walk(cwd, '', 0)
+  files.sort((a, b) => a.path.localeCompare(b.path))
+  return { ok: true, files, ...(truncated ? { truncated: true } : {}) }
+}
+
+function filesAction(config: Config, method: string | undefined, query: URLSearchParams, record?: unknown): { status: number; body: FilesListResponse | FileReadResponse | FileWriteResponse } {
+  const rawCwd = method === 'POST' && isRecord(record) ? record.cwd : query.get('cwd')
+  const cwd = validateWorkspace(rawCwd, config.allowedRoots)
+  if ('error' in cwd) return { status: 400, body: { ok: false, error: cwd.error } }
+  if (method === 'GET') {
+    const path = query.get('path')
+    if (!path) return { status: 200, body: listWorkspaceFiles(cwd.path) }
+    const target = resolveWorkspaceFile(cwd.path, path)
+    if ('error' in target) return { status: 400, body: { ok: false, error: target.error } }
+    try {
+      const stat = statSync(target.abs)
+      if (!stat.isFile() || stat.size > MAX_FILE_BYTES) return { status: 400, body: { ok: false, error: 'file is not editable text or exceeds 1MB' } }
+      const content = readFileSync(target.abs, 'utf8')
+      return { status: 200, body: { ok: true, path: target.path, content, mtime: stat.mtimeMs } }
+    } catch (e) {
+      return { status: 404, body: { ok: false, error: e instanceof Error ? e.message : 'file not found' } }
+    }
+  }
+  if (method === 'POST' && isRecord(record)) {
+    const target = resolveWorkspaceFile(cwd.path, record.path)
+    if ('error' in target) return { status: 400, body: { ok: false, error: target.error } }
+    if (typeof record.content !== 'string' || Buffer.byteLength(record.content, 'utf8') > MAX_FILE_BYTES) return { status: 400, body: { ok: false, error: 'content must be text no larger than 1MB' } }
+    try {
+      const stat = statSync(target.abs)
+      if (!stat.isFile() || stat.size > MAX_FILE_BYTES) return { status: 400, body: { ok: false, error: 'file is not editable text or exceeds 1MB' } }
+      if (typeof record.mtime === 'number' && Math.abs(stat.mtimeMs - record.mtime) > 1) return { status: 409, body: { ok: false, error: 'file changed on disk; reload before saving' } }
+      writeFileSync(target.abs, record.content, 'utf8')
+      return { status: 200, body: { ok: true, mtime: statSync(target.abs).mtimeMs } }
+    } catch (e) {
+      return { status: 404, body: { ok: false, error: e instanceof Error ? e.message : 'file not found' } }
+    }
+  }
+  return { status: 405, body: { ok: false, error: 'method not allowed' } }
+}
+
 /** Plugin body: register the status and apply routes. */
 export function apply(ctx: Context, config: Config): void {
   ctx.inject(['webServer'], (httpCtx) => {
@@ -1547,6 +1641,23 @@ export function apply(ctx: Context, config: Config): void {
           },
         }),
       'diff-review: repos route',
+    )
+    httpCtx.effect(
+      () =>
+        httpCtx.webServer!.register({
+          kind: 'exact',
+          path: config.filesPath,
+          handler: async (req, res) => {
+            const raw = req.method === 'POST' ? await readJsonBody(req) : undefined
+            if (raw === null) {
+              jsonResponse(res, 400, { ok: false, error: 'invalid JSON body' })
+              return
+            }
+            const result = filesAction(config, req.method, readQuery(req), raw)
+            jsonResponse(res, result.status, result.body)
+          },
+        }),
+      'diff-review: files route',
     )
   })
 }

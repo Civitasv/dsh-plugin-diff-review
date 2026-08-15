@@ -37,7 +37,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { ApplyHunkResponse, ApplyResponse, CommentsResponse, CommitDiffResponse, CommitInfo, DiffFile, DiffHunk, GitResponse, HistoryResponse, PrResponse, ReposResponse, ReviewComment, ReviewFinding, ReviewResponse, StatusResponse } from '../shared/types.ts'
+import type { ApplyHunkResponse, ApplyResponse, CommentsResponse, CommitDiffResponse, CommitInfo, DiffFile, DiffHunk, FileReadResponse, FilesListResponse, FileWriteResponse, GitResponse, HistoryResponse, PrResponse, ReposResponse, ReviewComment, ReviewFinding, ReviewResponse, StatusResponse, WorkspaceFileEntry } from '../shared/types.ts'
 import { parseReviewPackage, isReviewPackageText } from './review-package.ts'
 import type { ReviewPackage, ReviewPackageComment, ReviewPackageFinding } from './review-package.ts'
 
@@ -61,11 +61,12 @@ const BRANCHES_URL = 'diff-review/branches'
 const REVIEW_URL = 'diff-review/review'
 const PR_URL = 'diff-review/pr'
 const REPOS_URL = 'diff-review/repos'
+const FILES_URL = 'diff-review/files'
 const OPEN_EDITOR_URL = 'open-editor/open'
 const STYLE_TAG = 'dsh-plugin-diff-review/review.css'
 
 /** Open state shared between the header trigger (session scope) and the overlay (root scope). */
-const overlayStore = createSnapshotStore<{ open: boolean; cwd: string | null; key: number; focus?: { path: string; line?: number; tab?: 'session' | 'workspace' } | null }>({
+const overlayStore = createSnapshotStore<{ open: boolean; cwd: string | null; key: number; focus?: { path: string; line?: number; round?: number; tab?: 'session' | 'workspace' } | null }>({
   open: false,
   cwd: null,
   key: 0,
@@ -160,7 +161,6 @@ type WorkspaceScope = 'all' | 'unstaged' | 'staged' | 'commit' | 'branch' | 'las
 
 /** Review-scope dropdown options: each id maps to a locale label in `zh`/`en`. */
 const SCOPE_OPTIONS: { id: WorkspaceScope; label: keyof typeof zh }[] = [
-  { id: 'all', label: 'scope.all' },
   { id: 'unstaged', label: 'scope.unstaged' },
   { id: 'staged', label: 'scope.staged' },
   { id: 'commit', label: 'scope.commit' },
@@ -226,6 +226,13 @@ interface SessionRound {
   round: number
   label: string
   changes: RoundChange[]
+}
+
+/** One file summarized in the reply-local changes card. */
+interface TurnChangeSummary {
+  path: string
+  added: number
+  deleted: number
 }
 
 interface FileDiffLike {
@@ -373,6 +380,65 @@ export function countSessionChanges(nodes: readonly ConversationNode[]): number 
     }
   }
   return count
+}
+
+function textLineCount(text: string): number {
+  if (text === '') return 0
+  return text.split('\n').length - (text.endsWith('\n') ? 1 : 0)
+}
+
+/** Merge all file mutations bounded by one engine-owned agent turn. */
+function collectTurnChanges(nodes: readonly ConversationNode[], startSeq: number, endSeq: number): TurnChangeSummary[] {
+  const files = new Map<string, TurnChangeSummary>()
+  for (const node of nodes) {
+    if (node.kind !== 'tool-result' || node.seq < startSeq || node.seq > endSeq) continue
+    for (const change of changesFromToolResult(node.call, node)) {
+      const current = files.get(change.path) ?? { path: change.path, added: 0, deleted: 0 }
+      for (const hunk of change.hunks) {
+        for (const part of diffLines(hunk.oldText ?? '', hunk.newText)) {
+          if (part.added) current.added += textLineCount(part.value)
+          else if (part.removed) current.deleted += textLineCount(part.value)
+        }
+      }
+      files.set(change.path, current)
+    }
+  }
+  return [...files.values()]
+}
+
+/** Adapt a persisted session diff to the read-only file shape used by Last Turn. */
+function sessionChangeToDiffFile(change: RoundChange): DiffFile {
+  let added = 0
+  let deleted = 0
+  const chunks: string[] = [`diff --git a/${change.path} b/${change.path}`, `--- a/${change.path}`, `+++ b/${change.path}`]
+  for (const hunk of change.hunks) {
+    const before = hunk.oldText ?? ''
+    const after = hunk.newText
+    const beforeLines = textLineCount(before)
+    const afterLines = textLineCount(after)
+    chunks.push(`@@ -1,${beforeLines} +1,${afterLines} @@`)
+    for (const part of diffLines(before, after)) {
+      const prefix = part.added ? '+' : part.removed ? '-' : ' '
+      const count = textLineCount(part.value)
+      if (part.added) added += count
+      else if (part.removed) deleted += count
+      for (const line of part.value.split('\n').slice(0, part.value.endsWith('\n') ? -1 : undefined)) chunks.push(`${prefix}${line}`)
+    }
+  }
+  return {
+    path: change.path,
+    xy: 'M',
+    status: 'M',
+    untracked: change.hunks.some((hunk) => hunk.oldText === null),
+    staged: false,
+    unstaged: true,
+    added,
+    deleted,
+    diff: chunks.join('\n'),
+    binary: false,
+    mtime: 0,
+    hunks: [],
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -624,6 +690,8 @@ const REVIEW_CSS = `
 .dsdr-btn-confirm{border-color:var(--dsw-alias-state-error-primary);background:var(--dsw-alias-state-error-primary);color:var(--dsw-static-neutral-bluish-50)}
 .dsdr-btn-confirm:hover:not(:disabled){background:var(--dsw-alias-state-error-primary);color:var(--dsw-static-neutral-bluish-50)}
 .dsdr-commit-input{box-sizing:border-box;width:200px;min-height:28px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);padding:3px 10px;font:inherit;font-size:12px;line-height:18px}
+.dsdr-commit-modal{position:absolute;z-index:10;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.42)}.dsdr-commit-card{display:flex;flex-direction:column;gap:16px;width:min(520px,calc(100% - 48px));padding:24px;border-radius:16px;background:var(--dsw-alias-bg-module-platform);box-shadow:var(--dsw-shadow-lv3)}.dsdr-commit-title{font-weight:600;color:var(--dsw-alias-label-primary)}.dsdr-commit-card .dsdr-commit-input{width:100%;min-height:38px}.dsdr-commit-include{display:flex;gap:9px;align-items:center;color:var(--dsw-alias-label-secondary);font-size:13px}.dsdr-commit-actions{display:flex;flex-wrap:wrap;gap:8px;border-top:1px solid var(--dsw-alias-border-l1);padding-top:14px}
+.dsdr-file-actions{display:flex;gap:3px;margin-left:6px}.dsdr-file-icon{width:22px;height:22px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:16px/20px var(--dsw-font-sans);cursor:pointer}.dsdr-file-icon:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.dsdr-file-icon-danger:hover{color:var(--dsw-alias-status-danger)}
 .dsdr-commit-input::placeholder{color:var(--dsw-alias-label-caption)}
 .dsdr-commit-input:focus{outline:none;border-color:var(--dsw-alias-brand-primary)}
 .dsdr-section{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);padding:10px 8px 3px;font-weight:600;display:flex;align-items:center;gap:6px}
@@ -857,6 +925,32 @@ const REVIEW_CSS = `
 .dsdr-review-card-finding-text{min-width:0;overflow-wrap:anywhere}
 .dsdr-review-card-finding-loc{font-family:var(--dsw-font-mono);font-size:11px;color:var(--dsw-alias-label-tertiary)}
 .dsdr-review-card-foot{padding:6px 12px;font-size:11px;color:var(--dsw-alias-label-tertiary);border-top:1px solid var(--dsw-alias-border-l1)}
+/* --- Codex-style reply change summary (turn tail) --- */
+.dsdr-turn-summary{max-width:min(720px,100%);margin:2px 0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-module-platform);overflow:hidden}
+.dsdr-turn-summary-head{display:flex;align-items:center;gap:10px;padding:12px 14px}
+.dsdr-turn-summary-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+.dsdr-turn-summary-title{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.dsdr-turn-summary-stats{font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dsdr-turn-summary-add{color:var(--dsw-alias-state-success-primary)}
+.dsdr-turn-summary-del{color:var(--dsw-alias-state-error-primary);margin-left:4px}
+.dsdr-turn-summary-files{border-top:1px solid var(--dsw-alias-border-l1)}
+.dsdr-turn-summary-file{display:flex;align-items:center;gap:8px;width:100%;padding:8px 14px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-family:var(--dsw-font-mono);font-size:12px;text-align:left;cursor:pointer}
+.dsdr-turn-summary-file:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsdr-turn-summary-file span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsdr-turn-summary-file-stats{margin-left:auto;flex:none;font-family:var(--dsw-font-sans,system-ui);font-size:12px}
+/* --- Files drawer --- */
+.dsdr-files-workspace{display:flex;min-height:0;flex:1;flex-direction:column;background:var(--dsw-alias-bg-module-platform)}
+.dsdr-files-toolbar{display:flex;align-items:center;padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.dsdr-files-search{width:100%;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);padding:7px 9px;font:inherit;font-size:12px}
+.dsdr-files-content{display:grid;grid-template-columns:minmax(230px,31%) 1fr;min-height:0;flex:1}
+.dsdr-files-list{overflow:auto;border-right:1px solid var(--dsw-alias-border-l1);padding:8px 6px}
+.dsdr-files-item{display:flex;width:100%;box-sizing:border-box;border:0;border-radius:7px;background:transparent;padding:6px 8px;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-mono);font-size:11px;line-height:16px;text-align:left;cursor:pointer}
+.dsdr-files-item:hover,.dsdr-files-item-active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsdr-files-editor{display:flex;min-width:0;flex-direction:column}.dsdr-files-path{padding:8px 12px;color:var(--dsw-alias-label-tertiary);font:11px var(--dsw-font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.dsdr-code-editor{display:flex;min-height:0;flex:1;background:var(--dsw-alias-bg-layer-1);overflow:hidden}.dsdr-code-lines{flex:none;width:48px;box-sizing:border-box;overflow:hidden;padding:12px 8px 12px 0;border-right:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-tertiary);font:12px/20px var(--dsw-font-mono);text-align:right;user-select:none}.dsdr-code-lines span{display:block;height:20px}
+.dsdr-code-layer{position:relative;min-width:0;min-height:0;flex:1;overflow:hidden}.dsdr-code-highlight,.dsdr-files-text{box-sizing:border-box;position:absolute;inset:0;margin:0;padding:12px 14px;border:0;font:12px/20px var(--dsw-font-mono);tab-size:2;white-space:pre;overflow:auto}.dsdr-code-highlight{pointer-events:none;color:var(--dsw-alias-label-primary);background:transparent}.dsdr-files-text{resize:none;background:transparent;color:transparent;caret-color:var(--dsw-alias-label-primary);outline:0;-webkit-text-fill-color:transparent}.dsdr-files-text::selection{background:rgba(91,140,255,.35)}
+.dsdr-code-keyword{color:#c586c0}.dsdr-code-string{color:#ce9178}.dsdr-code-comment{color:#6a9955}.dsdr-code-number{color:#b5cea8}.dsdr-code-plain{color:var(--dsw-alias-label-primary)}
+.dsdr-files-actions{display:flex;align-items:center;gap:6px;padding:8px 10px;border-top:1px solid var(--dsw-alias-border-l1)}
 /* --- fallback user bubble (native look) --- */
 .dsdr-fallback-user{flex-direction:column;align-items:flex-end;gap:6px;display:flex}
 .dsdr-fallback-user-stack{flex-direction:column;align-items:flex-end;gap:8px;min-width:0;max-width:min(525px,82%);display:flex}
@@ -1003,6 +1097,14 @@ const zh = {
   'review.cardJump': '点击在评审面板中定位到对应代码',
   'review.cardOpenFile': '在评审面板中打开该文件',
   'review.cardHint': '点击评论可在评审面板中定位到对应代码',
+  'review.turnSummaryTitle': '已修改 {n} 个文件',
+  'review.turnSummaryReview': '评审',
+  'files.title': '文件',
+  'files.search': '筛选文件…',
+  'files.save': '保存',
+  'files.saved': '已保存',
+  'files.loading': '正在读取…',
+  'files.empty': '没有匹配文件',
   // fallback.*: labels of the built-in image fallback viewer (FallbackUserBubble),
   // used when a plain user message carries images.
   'fallback.image': '图片',
@@ -1149,6 +1251,14 @@ const en: Record<keyof typeof zh, string> = {
   'review.cardJump': 'Jump to the matching code in the review panel',
   'review.cardOpenFile': 'Open this file in the review panel',
   'review.cardHint': 'Click a comment to jump to the matching change block',
+  'review.turnSummaryTitle': 'Edited {n} files',
+  'review.turnSummaryReview': 'Review',
+  'files.title': 'Files',
+  'files.search': 'Filter files…',
+  'files.save': 'Save',
+  'files.saved': 'Saved',
+  'files.loading': 'Loading…',
+  'files.empty': 'No matching files',
   // fallback.*: labels of the built-in image fallback viewer (FallbackUserBubble),
   // used when a plain user message carries images.
   'fallback.image': 'Image',
@@ -1168,6 +1278,10 @@ const en: Record<keyof typeof zh, string> = {
 
 type DiffReviewActionProps = PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'diff-review'>
 type DiffReviewOverlayProps = PropsRuntime<'shell.overlay'> & PropsLocale<'diff-review'> & { sessions: ISessions }
+type TurnSummaryProps = PropsRuntime<'conversation.chat.turnTail'> &
+  PropsLocale<'diff-review'> & {
+    matched: { turn: { turn: number; start?: { seq: number }; end?: { seq: number } } }
+  }
 
 /** Diff icon (lucide file-diff). */
 function IconDiff() {
@@ -1933,6 +2047,141 @@ function DiffReviewPrefs({ t }: { t: (key: keyof typeof zh, params?: Record<stri
 // Header action (session scope): badge + open.
 // ---------------------------------------------------------------------------
 
+/** Reply-local change summary mounted beneath a completed agent turn. */
+function TurnChangeSummary({ matched, sessionId, useSession, useSessions, t }: TurnSummaryProps) {
+  const nodes = useSession((snapshot) => snapshot.nodes)
+  const cwd = useSessions((sessions: SessionListState) => sessions.byId[sessionId]?.cwd)
+  const turn = matched.turn
+  const files = useMemo(() => collectTurnChanges(nodes, turn.start?.seq ?? -Infinity, turn.end?.seq ?? Infinity), [nodes, turn])
+  const added = useMemo(() => files.reduce((total, file) => total + file.added, 0), [files])
+  const deleted = useMemo(() => files.reduce((total, file) => total + file.deleted, 0), [files])
+
+  if (files.length === 0) return null
+
+  const review = () => {
+    if (!cwd) return
+    overlayStore.update((state) => {
+      state.open = true
+      state.cwd = cwd
+      state.focus = { path: files[0].path, round: turn.turn, tab: 'session' }
+      state.key = state.key + 1
+    })
+  }
+
+  return (
+    <div className="dsdr-turn-summary">
+      <div className="dsdr-turn-summary-head">
+        <span className="dsdr-turn-summary-icon"><IconDiff /></span>
+        <div>
+          <div className="dsdr-turn-summary-title">{t('review.turnSummaryTitle', { n: files.length })}</div>
+          <div className="dsdr-turn-summary-stats"><span className="dsdr-turn-summary-add">+{added}</span><span className="dsdr-turn-summary-del">-{deleted}</span></div>
+        </div>
+        <span className="dsdr-spacer" />
+        <button type="button" className="dsdr-btn" onClick={review}>{t('review.turnSummaryReview')}</button>
+      </div>
+      <div className="dsdr-turn-summary-files">
+        {files.map((file) => (
+          <button key={file.path} type="button" className="dsdr-turn-summary-file" onClick={review} title={file.path}>
+            <span>{file.path}</span>
+            <span className="dsdr-turn-summary-file-stats"><span className="dsdr-turn-summary-add">+{file.added}</span><span className="dsdr-turn-summary-del">-{file.deleted}</span></span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function highlightCode(value: string): ReactNode[] {
+  const token = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\b(?:const|let|var|function|return|if|else|for|while|async|await|import|from|export|type|interface|class|new|true|false|null|undefined)\b|\b\d+(?:\.\d+)?\b)/g
+  return value.split(token).filter(Boolean).map((part, index) => {
+    const kind = part.startsWith('//') || part.startsWith('/*') ? 'comment' : part.startsWith('"') || part.startsWith("'") ? 'string' : /^\d/.test(part) ? 'number' : /^(const|let|var|function|return|if|else|for|while|async|await|import|from|export|type|interface|class|new|true|false|null|undefined)$/.test(part) ? 'keyword' : 'plain'
+    return <span className={'dsdr-code-' + kind} key={index}>{part}</span>
+  })
+}
+
+function FilesWorkspace({ cwd, t, collapsed, onToggleDir }: { cwd: string; t: CardT; collapsed: ReadonlySet<string>; onToggleDir: (path: string) => void }) {
+  const [files, setFiles] = useState<WorkspaceFileEntry[]>([])
+  const [filter, setFilter] = useState('')
+  const [selected, setSelected] = useState<string | null>(null)
+  const [content, setContent] = useState('')
+  const [mtime, setMtime] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const savedContent = useRef('')
+  const codeRef = useRef<HTMLPreElement>(null)
+
+  useEffect(() => {
+    let alive = true
+    void fetch(`${FILES_URL}?cwd=${encodeURIComponent(cwd)}`, { headers: { accept: 'application/json' } })
+      .then((res) => res.json() as Promise<FilesListResponse>)
+      .then((data) => {
+        if (alive) {
+          setFiles(data.files ?? [])
+          setLoading(false)
+        }
+      })
+      .catch(() => alive && setLoading(false))
+    return () => { alive = false }
+  }, [cwd])
+
+  const shown = useMemo(() => files.filter((file) => file.path.toLowerCase().includes(filter.trim().toLowerCase())), [files, filter])
+  const tree = useMemo(() => buildFileTree(shown, (file) => file.path), [shown])
+  const open = async (path: string) => {
+    setSelected(path); setLoading(true); setNotice(null)
+    try {
+      const res = await fetch(`${FILES_URL}?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(path)}`, { headers: { accept: 'application/json' } })
+      const data = (await res.json()) as FileReadResponse
+      if (data.ok) { const next = data.content ?? ''; savedContent.current = next; setContent(next); setMtime(data.mtime ?? null) } else setNotice(data.error ?? 'Failed to read file')
+    } catch { setNotice('Failed to read file') } finally { setLoading(false) }
+  }
+  const save = async () => {
+    if (!selected || saving) return
+    setSaving(true); setNotice(null)
+    try {
+      const res = await fetch(FILES_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cwd, path: selected, content, mtime }) })
+      const data = (await res.json()) as FileWriteResponse
+      if (data.ok) { savedContent.current = content; setMtime(data.mtime ?? mtime); setNotice(t('files.saved')) } else setNotice(data.error ?? 'Failed to save file')
+    } catch { setNotice('Failed to save file') } finally { setSaving(false) }
+  }
+  useEffect(() => {
+    if (!selected || loading || saving || content === savedContent.current) return
+    const timer = window.setTimeout(() => void save(), 800)
+    return () => window.clearTimeout(timer)
+  }, [content, selected, loading, saving, mtime])
+
+  return (
+    <section className="dsdr-files-workspace" aria-label={t('files.title')}>
+      <div className="dsdr-files-toolbar"><input className="dsdr-files-search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={t('files.search')} autoFocus /></div>
+      <div className="dsdr-files-content">
+        <div className="dsdr-files-list">
+          <FileTreeView
+            nodes={tree}
+            collapsed={collapsed}
+            onToggleDir={onToggleDir}
+            depth={0}
+            renderLeaf={(leaf) => <button type="button" className={`dsdr-files-item${selected === leaf.path ? ' dsdr-files-item-active' : ''}`} onClick={() => void open(leaf.path)} title={leaf.path}>{leaf.name}</button>}
+          />
+          {!loading && shown.length === 0 ? <div className="dsdr-empty">{t('files.empty')}</div> : null}
+        </div>
+        <div className="dsdr-files-editor">
+          <div className="dsdr-files-path">{selected ?? (loading ? t('files.loading') : '')}</div>
+          {selected ? (
+            <div className="dsdr-code-editor">
+              <div className="dsdr-code-lines" aria-hidden="true">{content.split('\n').map((_, index) => <span key={index}>{index + 1}</span>)}</div>
+              <div className="dsdr-code-layer">
+                <pre ref={codeRef} className="dsdr-code-highlight" aria-hidden="true"><code>{highlightCode(content)}</code></pre>
+                <textarea className="dsdr-files-text" value={content} onChange={(event) => setContent(event.target.value)} onScroll={(event) => { if (codeRef.current) { codeRef.current.scrollTop = event.currentTarget.scrollTop; codeRef.current.scrollLeft = event.currentTarget.scrollLeft } }} spellCheck={false} />
+              </div>
+            </div>
+          ) : null}
+          {selected ? <div className="dsdr-files-actions"><span className="dsdr-notice">{saving ? t('files.loading') : notice ?? ''}</span></div> : null}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function DiffReviewAction({ sessionId, useSessions, useSession, t }: DiffReviewActionProps) {
   const cwd = useSessions((s: SessionListState) => s.byId[sessionId]?.cwd)
   const nodes = useSession((s) => s.nodes)
@@ -2485,6 +2734,8 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [confirm, setConfirm] = useState<'file' | 'all' | 'push' | null>(null)
   const [commitMessage, setCommitMessage] = useState('')
+  const [commitOpen, setCommitOpen] = useState(false)
+  const [includeUnstaged, setIncludeUnstaged] = useState(false)
   // Local (unpushed) commit history: list + per-commit diff view.
   const [history, setHistory] = useState<CommitInfo[]>([])
   const [selectedCommit, setSelectedCommit] = useState<CommitInfo | null>(null)
@@ -2496,7 +2747,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const [commentEditor, setCommentEditor] = useState<{ oldLine: number | null; newLine: number | null } | null>(null)
   const [commentText, setCommentText] = useState('')
   // Review scope: which slice of the repository the workspace tab shows.
-  const [scope, setScope] = useState<WorkspaceScope>('all')
+  const [scope, setScope] = useState<WorkspaceScope>('last-turn')
   const [branches, setBranches] = useState<string[]>([])
   const [baseBranch, setBaseBranch] = useState<string | null>(null)
   const [baseStatus, setBaseStatus] = useState<StatusResponse | null>(null)
@@ -2511,6 +2762,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   // Multi-repo: repos detected under the workspace + the selected one.
   const [repos, setRepos] = useState<{ path: string; branch: string | null }[]>([])
   const [repoPath, setRepoPath] = useState<string | null>(null)
+  const [surface, setSurface] = useState<'review' | 'files'>('review')
   // Temporary line highlight (jump target from a PR comment or a finding).
   const [jumpLine, setJumpLine] = useState<number | null>(null)
 
@@ -2560,16 +2812,6 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   )
 
   const rounds = useMemo(() => (snapshot ? collectSessionRounds(snapshot.nodes) : []), [snapshot])
-  // Last user-message timestamp — the Last-turn scope falls back to files whose
-  // mtime is after it when the session log has no recorded diff (bash edits).
-  const lastUserTime = useMemo(() => {
-    if (!snapshot) return 0
-    let t = 0
-    for (const n of snapshot.nodes) {
-      if (n.kind === 'user' && n.time > t) t = n.time
-    }
-    return t
-  }, [snapshot])
   // Diagnostics for the empty session-changes state: what the snapshot scan found.
   const sessionScan = useMemo(() => {
     if (!snapshot) return null
@@ -2597,6 +2839,11 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     const round = rounds.find((r) => r.round === selectedRound)
     return round?.changes.find((c) => c.path === selectedPath) ?? null
   }, [rounds, selectedRound, selectedPath])
+  /** Last Turn is sourced from persisted session diffs, not the active git repo. */
+  const lastTurnFiles = useMemo(() => {
+    const last = rounds.at(-1)
+    return last ? last.changes.filter((change) => change.hasDiff).map(sessionChangeToDiffFile) : []
+  }, [rounds])
 
   const cwd = storeState.cwd
   /** Active git repo for workspace operations (multi-repo selector override). */
@@ -2680,32 +2927,11 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     const focus = storeState.focus
     if (!storeState.open || !cwd || !focus) return
     if (focus.tab === 'session') {
-      // Session-tab jump: pick the most recent round that changed this file.
-      let targetRound: SessionRound | null = null
-      let targetChange: RoundChange | null = null
-      for (let i = rounds.length - 1; i >= 0; i--) {
-        const change = rounds[i].changes.find((c) => {
-          if (c.path === focus.path) return true
-          if (isAbsPath(c.path)) {
-            const rel = c.path.startsWith(cwd) ? c.path.slice(cwd.length).replace(/^[\\/]+/, '') : c.path
-            if (rel === focus.path) return true
-          }
-          return baseName(c.path) === baseName(focus.path)
-        })
-        if (change) {
-          targetRound = rounds[i]
-          targetChange = change
-          break
-        }
-      }
-      setTab('session')
-      if (targetRound && targetChange) {
-        setSelectedRound(targetRound.round)
-        setSelectedPath(targetChange.path)
-      } else {
-        setSelectedRound(null)
-        setSelectedPath(null)
-      }
+      // Reply cards always open the same Last Turn view; it is intentionally
+      // independent from the active Git repository selection.
+      setTab('workspace')
+      setScope('last-turn')
+      setSelected(focus.path)
       setJumpLine(focus.line ?? null)
       const scrollTimer = setTimeout(() => {
         if (focus.line != null) {
@@ -2806,32 +3032,6 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const stagedFiles = useMemo(() => files.filter((f) => f.staged), [files])
   const unstagedFiles = useMemo(() => files.filter((f) => !f.staged), [files])
 
-  // "Last turn" scope: paths the agent touched in the most recent round that
-  // actually changed files (the literal last round is often a chat-only turn).
-  const lastRoundPaths = useMemo(() => {
-    const set = new Set<string>()
-    let last: SessionRound | null = null
-    for (let i = rounds.length - 1; i >= 0; i--) {
-      if (rounds[i].changes.length > 0) {
-        last = rounds[i]
-        break
-      }
-    }
-    if (!last || !cwd) return set
-    for (const change of last.changes) {
-      set.add(change.path)
-      const p = change.path
-      if (isAbsPath(p)) {
-        const rel = p.startsWith(cwd) ? p.slice(cwd.length).replace(/^[\\/]+/, '') : p
-        set.add(rel)
-        set.add(baseName(p))
-      } else {
-        set.add(baseName(p))
-      }
-    }
-    return set
-  }, [rounds, cwd])
-
   /** The file slice the current scope shows. */
   const scopeFiles = useMemo(() => {
     switch (scope) {
@@ -2842,30 +3042,15 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       case 'branch':
         return baseStatus?.files ?? []
       case 'last-turn': {
-        if (files.length === 0) return []
-        const suffixMatch = (f: DiffFile): boolean => {
-          if (lastRoundPaths.size === 0) return false
-          if (lastRoundPaths.has(f.path) || lastRoundPaths.has(baseName(f.path))) return true
-          const suffix = `/${f.path}`
-          for (const p of lastRoundPaths) {
-            if (p.endsWith(suffix)) return true
-          }
-          return false
-        }
-        return files.filter((f) => {
-          if (suffixMatch(f)) return true
-          // Git fallback: changed after the last user message (session log may
-          // have no diff data, e.g. terminal-driven edits).
-          return lastUserTime > 0 && f.mtime >= lastUserTime - 5000
-        })
+        return lastTurnFiles
       }
       default:
         return files
     }
-  }, [scope, unstagedFiles, stagedFiles, baseStatus, files, lastRoundPaths, lastUserTime])
+  }, [scope, unstagedFiles, stagedFiles, baseStatus, files, lastTurnFiles])
 
   /** Scopes where file/hunk accept·revert·unstage and commit/push make sense. */
-  const allowActions = scope !== 'branch' && scope !== 'commit'
+  const allowActions = scope !== 'branch' && scope !== 'commit' && scope !== 'last-turn'
 
   /** Files the current scope can hand to the AI review. */
   const reviewableFiles = scope === 'branch' ? baseStatus?.files?.length ?? 0 : files.length
@@ -2878,6 +3063,10 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     () => (commitDiff?.ok ? buildFileTree(commitDiff.files, (f) => f.path) : []),
     [commitDiff],
   )
+
+  useEffect(() => {
+    if (scope === 'last-turn' && selected === null && lastTurnFiles.length > 0) setSelected(lastTurnFiles[0].path)
+  }, [scope, selected, lastTurnFiles])
 
   if (!storeState.open || !cwd) return null
 
@@ -2912,6 +3101,10 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       <span className="dsdr-file-name" title={file.path}>{name}</span>
       <span className="dsdr-file-stat">
         {file.binary ? t('review.binary') : t('review.changes', { added: file.added, deleted: file.deleted })}
+      </span>
+      <span className="dsdr-file-actions">
+        <button type="button" className="dsdr-file-icon" title={t('hunk.stage')} disabled={busy} onClick={(event) => { event.stopPropagation(); void runApply('accept', file.path) }}>+</button>
+        <button type="button" className="dsdr-file-icon dsdr-file-icon-danger" title={t('hunk.revert')} disabled={busy} onClick={(event) => { event.stopPropagation(); void runApply('revert', file.path) }}>↶</button>
       </span>
     </button>
   )
@@ -3215,10 +3408,23 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     }
   }
 
+  const submitCommit = async (pushAfter: boolean) => {
+    if (!activeCwd || busy) return
+    if (includeUnstaged) {
+      setBusy(true)
+      const staged = await applyChanges(activeCwd, 'accept')
+      setBusy(false)
+      if (!staged.ok) { setNotice({ kind: 'error', text: staged.error || t('review.loadError') }); return }
+    }
+    await onCommit()
+    if (pushAfter) onPush(true)
+    setCommitOpen(false)
+  }
+
   /** Push the current branch (double-click to confirm). */
-  const onPush = () => {
+  const onPush = (immediate = false) => {
     if (busy || !activeCwd) return
-    if (confirm !== 'push') {
+    if (!immediate && confirm !== 'push') {
       setConfirm('push')
       setTimeout(() => setConfirm((c) => (c === 'push' ? null : c)), 2500)
       return
@@ -3309,27 +3515,11 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
         />
         <div className="dsdr-header">
           <span className="dsdr-title">{t('review.title')}</span>
-          <span className="dsdr-tabs" role="tablist" aria-label={t('review.title')}>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'session'}
-              className={`dsdr-tab${tab === 'session' ? ' dsdr-tab-active' : ''}`}
-              onClick={() => setTab('session')}
-            >
-              {t('tab.session')}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'workspace'}
-              className={`dsdr-tab${tab === 'workspace' ? ' dsdr-tab-active' : ''}`}
-              onClick={() => setTab('workspace')}
-            >
-              {t('tab.workspace')}
-            </button>
-          </span>
-          {tab === 'workspace' && status?.isRepo ? (
+          <div className="dsdr-tabs" role="tablist" aria-label={t('review.title')}>
+            <button type="button" role="tab" aria-selected={surface === 'review'} className={`dsdr-tab${surface === 'review' ? ' dsdr-tab-active' : ''}`} onClick={() => setSurface('review')}>{t('review.title')}</button>
+            <button type="button" role="tab" aria-selected={surface === 'files'} className={`dsdr-tab${surface === 'files' ? ' dsdr-tab-active' : ''}`} onClick={() => setSurface('files')}>{t('files.title')}</button>
+          </div>
+          {surface === 'review' && tab === 'workspace' && status?.isRepo ? (
             <span className="dsdr-scope">
               {repos.length > 1 ? (
                 <ThemeSelect
@@ -3370,45 +3560,28 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                 : t('review.notRepo')}
           </span>
           <span className="dsdr-spacer" />
-          {tab === 'workspace' && allowActions ? (
-            <>
-              <button type="button" className="dsdr-btn dsdr-btn-primary" disabled={busy || files.length === 0} onClick={() => onAllAction('accept')}>
-                {t('review.acceptAll')}
-              </button>
-              {stagedCount > 0 ? (
-                <button type="button" className="dsdr-btn" disabled={busy} onClick={() => void runApply('unstage')}>
-                  {t('review.unstageAll')}
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className={`dsdr-btn dsdr-btn-danger${confirm === 'all' ? ' dsdr-btn-confirm' : ''}`}
-                disabled={busy || files.length === 0}
-                onClick={() => onAllAction('revert')}
-              >
-                {confirm === 'all' ? t('review.confirmRevertAll') : t('review.revertAll')}
-              </button>
-              <input
-                className="dsdr-commit-input"
-                type="text"
-                value={commitMessage}
-                placeholder={t('review.commitPlaceholder')}
-                disabled={busy}
-                onChange={(event) => setCommitMessage(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') void onCommit()
-                }}
-              />
-              <button type="button" className="dsdr-btn" disabled={busy || !commitMessage.trim() || stagedCount === 0} onClick={() => void onCommit()}>
-                {t('review.commit')}
-              </button>
-            </>
+         {surface === 'review' && tab === 'workspace' && allowActions ? (
+            <button type="button" className="dsdr-btn" disabled={busy || (files.length === 0 && stagedCount === 0)} onClick={() => setCommitOpen(true)}>{t('review.commit')}</button>
           ) : null}
           <button type="button" className="dsdr-btn" aria-label={t('review.close')} onClick={close}>
             <IconX />
           </button>
         </div>
 
+        {commitOpen ? (
+          <div className="dsdr-commit-modal" role="dialog" aria-modal="true">
+            <div className="dsdr-commit-card">
+              <div className="dsdr-commit-title">{status?.branch ?? t('review.commit')}</div>
+              <input className="dsdr-commit-input" autoFocus value={commitMessage} placeholder={t('review.commitPlaceholder')} onChange={(event) => setCommitMessage(event.target.value)} />
+              <label className="dsdr-commit-include"><input type="checkbox" checked={includeUnstaged} onChange={(event) => setIncludeUnstaged(event.target.checked)} /> Include unstaged changes</label>
+              <div className="dsdr-commit-actions"><button type="button" className="dsdr-btn" onClick={() => setCommitOpen(false)}>{t('comment.cancel')}</button><button type="button" className="dsdr-btn" disabled={busy || !commitMessage.trim()} onClick={() => void submitCommit(false)}>{t('review.commit')}</button><button type="button" className="dsdr-btn dsdr-btn-primary" disabled={busy || !commitMessage.trim()} onClick={() => void submitCommit(true)}>{t('review.commit')} and {t('review.push')}</button><button type="button" className="dsdr-btn" disabled={busy || (status?.ahead ?? 0) === 0} onClick={() => { setCommitOpen(false); onPush(true) }}>{t('review.push')}</button></div>
+            </div>
+          </div>
+        ) : null}
+        {surface === 'files' ? (
+          <FilesWorkspace cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} />
+        ) : (
+          <>
         {sendOpen ? (
           <div className="dsdr-send">
             <span className="dsdr-send-title">{t('review.sendTitle')}</span>
@@ -3804,7 +3977,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                       type="button"
                       className={`dsdr-btn${confirm === 'push' ? ' dsdr-btn-confirm' : ''}`}
                       disabled={busy || (status?.ahead ?? 0) === 0}
-                      onClick={onPush}
+                      onClick={() => setCommitOpen(true)}
                     >
                       {confirm === 'push' ? t('review.confirmPush') : `${t('review.push')}${(status?.ahead ?? 0) > 0 ? ` (${status?.ahead ?? 0})` : ''}`}
                     </button>
@@ -4073,6 +4246,9 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
           </div>
         )}
 
+          </>
+        )}
+
         <div className="dsdr-foot">
           {(loading || busy) && tab === 'workspace' ? <span className="dsdr-spinner" aria-hidden="true" /> : null}
           {busy ? <span className="dsdr-notice">{t('review.busy')}</span> : null}
@@ -4143,6 +4319,20 @@ export function apply(ctx: ClientContext): void {
         inject: () => ({ sessions: ctx.sessions }),
       },
       DiffReviewComposerDock,
+    ),
+  )
+  // The engine's turn tail sits directly after a completed agent response.
+  // Its chain selector returns the owner currency; the component declines
+  // turns without persisted file changes.
+  ctx.slots.inject('conversation.chat.turnTail', () =>
+    ctx.slots.register(
+      {
+        name: 'conversation.chat.turnTail',
+        select: (owner) => owner,
+        priority: -10,
+        locale: LOCALE_NS,
+      },
+      TurnChangeSummary,
     ),
   )
   // The carried review package renders in the transcript as a Codex-style

@@ -279,3 +279,34 @@ export interface ReposResponse {
   repos: { path: string; branch: string | null }[]
   error?: string
 }
+
+// ---------------------------------------------------------------------------
+// Files workbench (workspace-bounded text editing).
+// ---------------------------------------------------------------------------
+
+export interface WorkspaceFileEntry {
+  path: string
+  size: number
+  mtime: number
+}
+
+export interface FilesListResponse {
+  ok: boolean
+  files: WorkspaceFileEntry[]
+  truncated?: boolean
+  error?: string
+}
+
+export interface FileReadResponse {
+  ok: boolean
+  path?: string
+  content?: string
+  mtime?: number
+  error?: string
+}
+
+export interface FileWriteResponse {
+  ok: boolean
+  mtime?: number
+  error?: string
+}

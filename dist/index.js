@@ -19,6 +19,7 @@ var Config = z.object({
   reviewPath: z.string().default("/diff-review/review"),
   prPath: z.string().default("/diff-review/pr"),
   reposPath: z.string().default("/diff-review/repos"),
+  filesPath: z.string().default("/diff-review/files"),
   reviewProvider: z.string().default(""),
   reviewModel: z.string().default(""),
   allowedRoots: z.array(z.string()).default([])
@@ -954,6 +955,87 @@ async function readJsonBody(req) {
 function readQuery(req) {
   return new URLSearchParams(req.url?.split("?")[1] ?? "");
 }
+var MAX_FILES_LIST = 2e3;
+var MAX_FILE_BYTES = 1024 * 1024;
+var SKIPPED_FILE_DIRS = /* @__PURE__ */ new Set([".git", "node_modules", ".DS_Store"]);
+function resolveWorkspaceFile(cwd, raw) {
+  const safe = sanitizeRepoPath(raw);
+  if ("error" in safe) return safe;
+  const abs = resolve(cwd, safe.path);
+  if (!abs.startsWith(cwd.endsWith(sep) ? cwd : cwd + sep)) return { error: "path escapes workspace" };
+  return { path: safe.path.replace(/\\/g, "/"), abs };
+}
+function listWorkspaceFiles(cwd) {
+  const files = [];
+  let truncated = false;
+  const walk = (dir, prefix, depth) => {
+    if (depth > 12 || files.length >= MAX_FILES_LIST) {
+      truncated = true;
+      return;
+    }
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (files.length >= MAX_FILES_LIST) {
+        truncated = true;
+        return;
+      }
+      if (entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) {
+        if (!SKIPPED_FILE_DIRS.has(entry.name)) walk(join(dir, entry.name), `${prefix}${entry.name}/`, depth + 1);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const abs = join(dir, entry.name);
+      try {
+        const stat = statSync(abs);
+        files.push({ path: `${prefix}${entry.name}`, size: stat.size, mtime: stat.mtimeMs });
+      } catch {
+      }
+    }
+  };
+  walk(cwd, "", 0);
+  files.sort((a, b) => a.path.localeCompare(b.path));
+  return { ok: true, files, ...truncated ? { truncated: true } : {} };
+}
+function filesAction(config, method, query, record) {
+  const rawCwd = method === "POST" && isRecord(record) ? record.cwd : query.get("cwd");
+  const cwd = validateWorkspace(rawCwd, config.allowedRoots);
+  if ("error" in cwd) return { status: 400, body: { ok: false, error: cwd.error } };
+  if (method === "GET") {
+    const path = query.get("path");
+    if (!path) return { status: 200, body: listWorkspaceFiles(cwd.path) };
+    const target = resolveWorkspaceFile(cwd.path, path);
+    if ("error" in target) return { status: 400, body: { ok: false, error: target.error } };
+    try {
+      const stat = statSync(target.abs);
+      if (!stat.isFile() || stat.size > MAX_FILE_BYTES) return { status: 400, body: { ok: false, error: "file is not editable text or exceeds 1MB" } };
+      const content = readFileSync(target.abs, "utf8");
+      return { status: 200, body: { ok: true, path: target.path, content, mtime: stat.mtimeMs } };
+    } catch (e) {
+      return { status: 404, body: { ok: false, error: e instanceof Error ? e.message : "file not found" } };
+    }
+  }
+  if (method === "POST" && isRecord(record)) {
+    const target = resolveWorkspaceFile(cwd.path, record.path);
+    if ("error" in target) return { status: 400, body: { ok: false, error: target.error } };
+    if (typeof record.content !== "string" || Buffer.byteLength(record.content, "utf8") > MAX_FILE_BYTES) return { status: 400, body: { ok: false, error: "content must be text no larger than 1MB" } };
+    try {
+      const stat = statSync(target.abs);
+      if (!stat.isFile() || stat.size > MAX_FILE_BYTES) return { status: 400, body: { ok: false, error: "file is not editable text or exceeds 1MB" } };
+      if (typeof record.mtime === "number" && Math.abs(stat.mtimeMs - record.mtime) > 1) return { status: 409, body: { ok: false, error: "file changed on disk; reload before saving" } };
+      writeFileSync(target.abs, record.content, "utf8");
+      return { status: 200, body: { ok: true, mtime: statSync(target.abs).mtimeMs } };
+    } catch (e) {
+      return { status: 404, body: { ok: false, error: e instanceof Error ? e.message : "file not found" } };
+    }
+  }
+  return { status: 405, body: { ok: false, error: "method not allowed" } };
+}
 function apply(ctx, config) {
   ctx.inject(["webServer"], (httpCtx) => {
     httpCtx.effect(
@@ -1186,6 +1268,22 @@ function apply(ctx, config) {
         }
       }),
       "diff-review: repos route"
+    );
+    httpCtx.effect(
+      () => httpCtx.webServer.register({
+        kind: "exact",
+        path: config.filesPath,
+        handler: async (req, res) => {
+          const raw = req.method === "POST" ? await readJsonBody(req) : void 0;
+          if (raw === null) {
+            jsonResponse(res, 400, { ok: false, error: "invalid JSON body" });
+            return;
+          }
+          const result = filesAction(config, req.method, readQuery(req), raw);
+          jsonResponse(res, result.status, result.body);
+        }
+      }),
+      "diff-review: files route"
     );
   });
 }

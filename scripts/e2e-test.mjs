@@ -36,6 +36,7 @@ await run(['init', '-q', '-b', 'main'])
 await run(['config', 'core.autocrlf', 'false'])
 writeFileSync(join(repo, 'a.txt'), 'one\ntwo\nthree\n')
 writeFileSync(join(repo, 'gone.txt'), 'bye\n')
+writeFileSync(join(repo, 'files-demo.txt'), 'files demo\n')
 await run(['add', '-A'])
 await run(['commit', '-q', '-m', 'init'])
 
@@ -92,6 +93,7 @@ check('comments route registered', routes.has('/diff-review/comments'))
 check('review route registered', routes.has('/diff-review/review'))
 check('pr route registered', routes.has('/diff-review/pr'))
 check('repos route registered', routes.has('/diff-review/repos'))
+check('files route registered', routes.has('/diff-review/files'))
 
 // ---- fake req/res helpers ----
 function fakeRes() {
@@ -134,6 +136,22 @@ async function get2(route, query) {
   return { status: res.status, json: JSON.parse(res.body) }
 }
 
+// ---- Files: list, read, write and path safety ----
+let r
+let fr = await get('/diff-review/files')
+check('files list ok + includes demo file', fr.status === 200 && fr.json.ok === true && fr.json.files.some((file) => file.path === 'files-demo.txt'))
+fr = await get2('/diff-review/files', `cwd=${encodeURIComponent(repo)}&path=${encodeURIComponent('files-demo.txt')}`)
+check('files read ok', fr.status === 200 && fr.json.ok === true && fr.json.path === 'files-demo.txt' && fr.json.content === 'files demo\n')
+const originalMtime = fr.json.mtime
+r = await post('/diff-review/files', { cwd: repo, path: 'files-demo.txt', content: 'files api edit\n', mtime: originalMtime })
+check('files write ok', r.status === 200 && r.json.ok === true)
+check('files write updates disk', readFileSync(join(repo, 'files-demo.txt'), 'utf8') === 'files api edit\n')
+r = await post('/diff-review/files', { cwd: repo, path: 'files-demo.txt', content: 'stale write\n', mtime: originalMtime })
+check('files stale write -> 409', r.status === 409)
+fr = await get2('/diff-review/files', `cwd=${encodeURIComponent(repo)}&path=${encodeURIComponent('../../etc/passwd')}`)
+check('files path traversal -> 400', fr.status === 400)
+writeFileSync(join(repo, 'files-demo.txt'), 'files demo\n')
+
 // ---- status ----
 const status = await get('/diff-review/status')
 check('status 200', status.status === 200)
@@ -152,7 +170,7 @@ check('gone.txt D', byPath['gone.txt']?.status === 'D')
 check('gone.txt diff has -bye', byPath['gone.txt']?.diff.includes('-bye'))
 
 // ---- apply: accept one file (stage untracked) ----
-let r = await post('/diff-review/apply', { cwd: repo, action: 'accept', path: 'untracked.txt' })
+r = await post('/diff-review/apply', { cwd: repo, action: 'accept', path: 'untracked.txt' })
 check('accept untracked ok', r.status === 200 && r.json.ok === true)
 const afterAccept = await get('/diff-review/status')
 check('untracked.txt now staged A', afterAccept.json.files.find((f) => f.path === 'untracked.txt')?.status === 'A')
@@ -436,7 +454,7 @@ check('pr degrades with note', typeof pr.json.error === 'string' && pr.json.erro
 
 // ---- multi-repo detection ----
 const standalone = join(root, '..', '.e2e-standalone')
-rmSync(standalone, { recursive: true, force: true })
+rmSync(standalone, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 mkdirSync(standalone, { recursive: true })
 const rp = (args) => new Promise((resolve, reject) => execFile('git', ['-C', standalone, ...args], { windowsHide: true }, (e, so, se) => (e ? reject(new Error(se)) : resolve(so))))
 await rp(['init', '-q', '-b', 'main'])
@@ -455,9 +473,10 @@ await rp(['add', '-A'])
 await rp(['commit', '-q', '-m', 'top'])
 const repos = await get('/diff-review/repos', standalone)
 check('repos route ok', repos.status === 200 && repos.json.ok === true)
-check('repos lists top-level repo', repos.json.repos.some((x) => x.path === standalone), JSON.stringify(repos.json.repos.map((x) => x.path)))
-check('repos lists nested repo', repos.json.repos.some((x) => x.path === join(standalone, 'nested')), JSON.stringify(repos.json.repos.map((x) => x.path)))
-rmSync(standalone, { recursive: true, force: true })
+const portable = (value) => value.replace(/\\/g, '/')
+check('repos lists top-level repo', repos.json.repos.some((x) => portable(x.path) === portable(standalone)), JSON.stringify(repos.json.repos.map((x) => x.path)))
+check('repos lists nested repo', repos.json.repos.some((x) => portable(x.path) === portable(join(standalone, 'nested'))), JSON.stringify(repos.json.repos.map((x) => x.path)))
+rmSync(standalone, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 
 // ---- error paths ----
 r = await post('/diff-review/apply', { cwd: join(root, 'does-not-exist'), action: 'accept' })
