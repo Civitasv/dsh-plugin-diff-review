@@ -7,18 +7,13 @@
 
 ## 截图
 
-工作区：已暂存 / 未暂存 / 历史 / 分支与远程，范围下拉、AI 评审结论横幅与
-行内发现卡片、评论角标：
+行内评论 chip 条（真实界面，输入框上方）：评论常驻显示（`路径:行号` + 摘要），
+点击 chip 跳转到对应变更块，点击顶栏发送评审包，超过 4 条折叠为 +N：
 
-![工作区](docs/screenshots/workspace.png)
+![行内评论 chip 条](docs/screenshots/comments-real.png)
 
-提交详情：历史时间线点提交 → 该提交的变动文件树 + 逐文件 diff：
-
-![提交详情](docs/screenshots/commit.png)
-
-会话更改：按轮列出代理修改（不依赖 git），右侧查看每处 diff：
-
-![会话更改](docs/screenshots/session.png)
+工作区 / 会话更改面板为交互式界面（采纳/丢弃、逐 hunk、范围切换、AI 评审
+结论内联、提交/推送等），安装后打开「变动」即可体验。
 
 ## 特性
 
