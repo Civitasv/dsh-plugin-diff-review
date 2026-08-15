@@ -705,7 +705,7 @@ const REVIEW_CSS = `
 .dsdr-tab:hover{color:var(--dsw-alias-label-secondary)}
 .dsdr-tab-active{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsdr-file-tab{display:inline-flex;align-items:center;gap:5px;max-width:180px;min-width:0;padding-right:5px}.dsdr-file-tab>span:not(.dsdr-file-tab-close){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsdr-file-tab .dsdr-tree-file-icon{width:15px;height:15px;font-size:8px}.dsdr-file-tab-close{display:inline-flex;align-items:center;justify-content:center;flex:none;width:16px;height:16px;border-radius:4px;color:var(--dsw-alias-label-tertiary)}.dsdr-file-tab-close:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dsdr-file-tab-close svg{width:11px;height:11px}
-.dsdr-new-tab{position:relative;display:inline-flex;flex:none}.dsdr-new-tab-btn{width:26px;height:26px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);font:20px/20px var(--dsw-font-sans);cursor:pointer}.dsdr-new-tab-btn:hover,.dsdr-new-tab-btn[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.dsdr-new-tab-menu{position:fixed;z-index:90;display:flex;min-width:170px;flex-direction:column;gap:2px;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-new-tab-menu button{display:flex;align-items:center;gap:9px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);padding:8px 9px;font:13px/18px var(--dsw-font-sans);text-align:left;cursor:pointer}.dsdr-new-tab-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}.dsdr-files-browser-icon{color:var(--dsw-alias-label-secondary);font-size:15px}
+.dsdr-new-tab{position:relative;display:inline-flex;flex:none}.dsdr-new-tab-btn{width:26px;height:26px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);font:16px/18px var(--dsw-font-sans);cursor:pointer}.dsdr-new-tab-btn:hover,.dsdr-new-tab-btn[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.dsdr-new-tab-menu{position:fixed;z-index:90;display:flex;min-width:170px;flex-direction:column;gap:2px;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-new-tab-menu button{display:flex;align-items:center;gap:9px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);padding:8px 9px;font:13px/18px var(--dsw-font-sans);text-align:left;cursor:pointer}.dsdr-new-tab-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}.dsdr-files-browser-icon{color:var(--dsw-alias-label-secondary);font-size:15px}
 .dsdr-scope{display:inline-flex;align-items:center;gap:6px;margin-left:8px}
 .dsdr-scope .dsdr-sel-trigger{min-width:110px;height:26px;font-size:12px;line-height:18px;padding:0 8px;background:var(--dsw-alias-bg-layer-2)}
 .dsdr-spacer{flex:1}
@@ -797,7 +797,7 @@ const REVIEW_CSS = `
 .dsdr-diff-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--dsw-alias-label-tertiary);font-size:13px}
 .dsdr-diff-head{display:flex;align-items:center;gap:10px;padding:6px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
 .dsdr-file-head-actions{display:flex;flex:none;gap:3px;opacity:0;transition:opacity .12s}.dsdr-diff-head:hover .dsdr-file-head-actions,.dsdr-file-head-actions:focus-within{opacity:1}
-.dsdr-diff-path{font-family:var(--dsw-font-mono);font-size:13px;color:var(--dsw-alias-label-primary);flex:1;min-width:0;display:flex;align-items:center;gap:6px}
+.dsdr-diff-path{font-family:var(--dsw-font-mono);font-size:13px;color:var(--dsw-alias-label-primary);flex:1;min-width:0;display:flex;align-items:center;gap:6px;cursor:pointer}.dsdr-diff-path:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:3px;border-radius:4px}
 .dsdr-diff-path-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dsdr-diff-stats{font-size:11px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;flex:none}
 .dsdr-diff-scroll{flex:1;min-height:0;overflow:auto;display:flex}
@@ -976,7 +976,7 @@ const REVIEW_CSS = `
 .dsdr-files-search:focus{outline:none;border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-brand-primary) 15%,transparent)}
 .dsdr-files-content{display:grid;min-height:0;flex:1;overflow:hidden}
 .dsdr-files-list{min-height:0;overflow:hidden;border-right:1px solid var(--dsw-alias-border-l1);padding:8px 6px;background:var(--dsw-alias-bg-layer-1)}.dsdr-arborist{width:100%}.dsdr-arborist-fill{height:100%}.dsdr-arborist [role=tree]{overscroll-behavior:contain}.dsdr-arborist [role=row]{width:100%}.dsdr-arborist [role=row]::before{content:"";position:absolute;left:7px;top:-5px;bottom:-5px;width:1px;background:var(--dsw-alias-border-l1);opacity:.8;pointer-events:none}
-.dsdr-files-item{display:flex;align-items:center;width:100%;height:100%;box-sizing:border-box;border:0;border-radius:7px;background:transparent;padding:0 6px;color:var(--dsw-alias-label-secondary);font:12px/20px var(--dsw-font-mono);text-align:left;cursor:pointer;min-width:0}
+.dsdr-files-item{display:flex;align-items:center;width:100%;height:100%;box-sizing:border-box;border:0;border-radius:7px;background:transparent;padding:0 8px;color:var(--dsw-alias-label-secondary);font:12px/20px var(--dsw-font-mono);text-align:left;cursor:pointer;min-width:0}
 .dsdr-files-item-main{display:flex;align-items:center;gap:7px;min-width:0;flex:1;height:100%;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;padding:0}.dsdr-files-item-name{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.dsdr-files-item:hover,.dsdr-files-item-active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.dsdr-files-item-active{box-shadow:inset 2px 0 0 var(--dsw-alias-brand-primary)}.dsdr-files-item-menu{flex:none;display:flex;align-items:center;justify-content:center;width:20px;height:20px;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;opacity:0}.dsdr-files-item:hover .dsdr-files-item-menu,.dsdr-files-item-menu:focus-visible{opacity:1}.dsdr-files-item-menu:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dsdr-tree-file-icon{display:grid;place-items:center;flex:none;width:17px;height:17px;border-radius:5px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-brand-primary);font:700 9px/1 var(--dsw-font-sans)}.dsdr-tree-file-icon-image{color:var(--dsw-alias-state-success-primary)}.dsdr-tree-file-icon-code{color:var(--dsw-alias-brand-primary)}
 .dsdr-files-menu{position:fixed;z-index:80;display:flex;min-width:180px;flex-direction:column;gap:2px;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-files-menu button{border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);padding:8px 10px;text-align:left;font:12px var(--dsw-font-sans);cursor:pointer}.dsdr-files-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-files-editor{display:flex;min-width:0;min-height:0;flex-direction:column;background:var(--dsw-alias-bg-layer-1)}.dsdr-files-path{padding:10px 14px;color:var(--dsw-alias-label-secondary);font:12px/18px var(--dsw-font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform)}
@@ -2457,7 +2457,7 @@ function FileTreeView<T>(props: {
           data={nodes}
           width="100%"
           height={height}
-          rowHeight={33}
+          rowHeight={38}
           indent={14}
           paddingTop={4}
           paddingBottom={4}
@@ -4363,15 +4363,15 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               ) : selectedFile ? (
                 <>
                   <div className="dsdr-diff-head">
-                    <span className="dsdr-diff-path">
+                    <span className="dsdr-diff-path" role="button" tabIndex={0} title={collapsedReviewFiles.has(selectedFile.path) ? 'Expand file diff' : 'Collapse file diff'} onClick={() => toggleReviewFile(selectedFile.path)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleReviewFile(selectedFile.path) } }}>
                       <span className="dsdr-diff-path-text" title={selectedFile.path}>
                         {selectedFile.path}
                         {selectedFile.origPath ? ` ← ${selectedFile.origPath}` : ''}
                       </span>
                       <span className="dsdr-file-head-actions">
-                        <button type="button" className="dsdr-file-icon" title="Copy path" aria-label="Copy path" onClick={() => void writeClipboard(selectedFile.path)}>⧉</button>
-                        <button type="button" className="dsdr-file-icon" title={collapsedReviewFiles.has(selectedFile.path) ? 'Expand file' : 'Collapse file'} aria-label={collapsedReviewFiles.has(selectedFile.path) ? 'Expand file' : 'Collapse file'} onClick={() => toggleReviewFile(selectedFile.path)}>{collapsedReviewFiles.has(selectedFile.path) ? '⌄' : '⌃'}</button>
-                        <button type="button" className="dsdr-file-icon" title="Open file in Files" aria-label="Open file in Files" onClick={() => openInFilesTab(selectedFile.path)}>↗</button>
+                        <button type="button" className="dsdr-file-icon" title="Copy path" aria-label="Copy path" onClick={(event) => { event.stopPropagation(); void writeClipboard(selectedFile.path) }}>⧉</button>
+                        <button type="button" className="dsdr-file-icon" title={collapsedReviewFiles.has(selectedFile.path) ? 'Expand file' : 'Collapse file'} aria-label={collapsedReviewFiles.has(selectedFile.path) ? 'Expand file' : 'Collapse file'} onClick={(event) => { event.stopPropagation(); toggleReviewFile(selectedFile.path) }}>{collapsedReviewFiles.has(selectedFile.path) ? '⌄' : '⌃'}</button>
+                        <button type="button" className="dsdr-file-icon" title="Open file in Files" aria-label="Open file in Files" onClick={(event) => { event.stopPropagation(); openInFilesTab(selectedFile.path) }}>↗</button>
                       </span>
                     </span>
                     <span className="dsdr-diff-stats">
