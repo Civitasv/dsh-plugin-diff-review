@@ -6,8 +6,9 @@
  *  2. Client half  → client.js      (the DSH client bundle contract:
  *     `window.__ModuleLoader__.load({ id, factory })` — esbuild's CJS output
  *     is wrapped in a factory that receives the loader's `require`, so
- *     react / react/jsx-runtime / @deepseek-ai/* resolve through the shell's
- *     static module table and registered plugin bundles at runtime).
+ *     React and the explicitly injected DSH client services resolve through
+ *     the shell's module table. UI libraries are bundled: unlike services,
+ *     they do not register a factory in that table.
  */
 import { build } from 'esbuild'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -42,7 +43,18 @@ await build({
   jsx: 'automatic',
   target: 'es2020',
   minify: true,
-  external: ['react', 'react/jsx-runtime', 'react-dom', 'react-dom/client', '@deepseek-ai/*'],
+  external: [
+    'react',
+    'react/jsx-runtime',
+    'react-dom',
+    'react-dom/client',
+    '@deepseek-ai/dsh-client-runtime/client',
+  ],
+  // The pure primitives package imports KaTeX's stylesheet for its optional
+  // rich-text helpers. The shell owns document-level math styling; keeping
+  // that stylesheet out of this self-contained JS bundle also avoids emitting
+  // orphan font assets next to client.js.
+  loader: { '.css': 'empty' },
   // Third-party editor sources make an inline browser source map several MB;
   // ship the compact runtime bundle instead. The TypeScript source remains in
   // the plugin repository for development and server builds keep their map.
@@ -51,6 +63,18 @@ await build({
 })
 
 const body = readFileSync(tmpClient, 'utf8')
+// These are ordinary UI libraries, not DSH-injected client services. Leaving
+// either require in the output makes ModuleLoader fail before the plugin UI can
+// mount. Keep this assertion adjacent to the external list so a future build
+// change cannot silently reintroduce the release-blocking failure.
+for (const dependency of [
+  '@deepseek-ai/dsh-client-ui-attachment',
+  '@deepseek-ai/dsh-client-ui-primitives',
+]) {
+  if (body.includes(`require(${JSON.stringify(dependency)})`)) {
+    throw new Error(`[build] client bundle must include ${dependency}, not externalize it`)
+  }
+}
 const wrapped = `window.__ModuleLoader__.load({
 	id: ${JSON.stringify(PKG)},
 	factory: function (require) {

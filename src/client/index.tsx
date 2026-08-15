@@ -38,8 +38,6 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { ConversationNode, ToolResultNode, UserMessageNode } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId, ToolResultView } from '@deepseek-ai/dsh-api-remotes/client'
-import { IconChevronDownOutline14, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
-import { ImageGallery } from '@deepseek-ai/dsh-client-ui-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 // Type-only imports pulling the header-action slot contract, the shell.overlay
 // contract, the settings.general.item slot contract and the standard kit.
@@ -2757,22 +2755,11 @@ function FallbackUserBubble({
       setTimeout(() => setCopied(false), 1000)
     })
   }
-  const labels = useMemo(
-    () => ({
-      image: t('fallback.image'),
-      open: t('fallback.open'),
-      openNamed: (name: string) => t('fallback.openNamed', { name }),
-      loading: t('fallback.loading'),
-      loadFailed: t('fallback.loadFailed'),
-      lightbox: { dialog: t('fallback.lightboxDialog'), close: t('fallback.lightboxClose') },
-    }),
-    [t],
-  )
   return (
     <div className="dsdr-fallback-user" data-time-hover-root>
       <div className="dsdr-fallback-user-stack">
         {images.length > 0 ? (
-          <ImageGallery images={images} load={loadImage} align="end" labels={labels} />
+          <FallbackImageGallery images={images} load={loadImage} label={t('fallback.image')} />
         ) : null}
         {text !== '' ? (
           <div className="dsdr-fallback-user-row">
@@ -2787,11 +2774,66 @@ function FallbackUserBubble({
   )
 }
 
+/** Lightweight fallback for image-only user messages. It deliberately avoids
+ * the shell's unregistered attachment UI library so this plugin stays
+ * self-contained when installed through `dsh plugin add`. */
+function FallbackImageGallery({
+  images,
+  load,
+  label,
+}: {
+  images: readonly (UserBlock & { attachment: ImageAttachmentRef })[]
+  load: (attachment: ImageAttachmentRef) => Promise<string>
+  label: string
+}) {
+  const [sources, setSources] = useState<string[]>([])
+  useEffect(() => {
+    let active = true
+    void Promise.all(images.map((image) => load(image.attachment).catch(() => ''))).then((next) => {
+      if (active) setSources(next)
+    })
+    return () => { active = false }
+  }, [images, load])
+  return (
+    <div className="dsdr-fallback-images" aria-label={label}>
+      {sources.map((source, index) => source ? (
+        <a key={index} href={source} target="_blank" rel="noreferrer" title={label}>
+          <img src={source} alt={label} />
+        </a>
+      ) : null)}
+    </div>
+  )
+}
+
+async function writeClipboard(value: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(value)
+    return true
+  } catch {
+    const textarea = document.createElement('textarea')
+    textarea.value = value
+    textarea.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
+    document.body.appendChild(textarea)
+    textarea.select()
+    const copied = document.execCommand('copy')
+    textarea.remove()
+    return copied
+  }
+}
+
 function IconCopy() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
       <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </svg>
+  )
+}
+
+function IconConfigChevronDown({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m6 9 6 6 6-6" />
     </svg>
   )
 }
@@ -4742,7 +4784,7 @@ function DiffReviewConfigCard({ t }: { t: (key: keyof typeof zh, params?: Record
           <span className="dsdr-cfg-name">{t('settings.title')}</span>
           <span className="dsdr-cfg-desc">{t('config.title')}</span>
         </span>
-        <IconChevronDownOutline14 className={open ? 'dsdr-cfg-caret dsdr-cfg-caret-open' : 'dsdr-cfg-caret'} />
+        <IconConfigChevronDown className={open ? 'dsdr-cfg-caret dsdr-cfg-caret-open' : 'dsdr-cfg-caret'} />
       </button>
       {open ? (
         <div className="dsdr-cfg-body">
