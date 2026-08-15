@@ -689,7 +689,7 @@ const REVIEW_CSS = `
 .dsdr-count{background:var(--dsw-alias-fill-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;min-width:16px;text-align:center;font-size:11px;line-height:16px;padding:0 5px;font-variant-numeric:tabular-nums}
 .dsdr-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:32px}.dsdr-overlay-docked{justify-content:flex-end;padding:0;background:transparent;pointer-events:none}.dsdr-overlay-docked .dsdr-panel{pointer-events:auto}
 .dsdr-panel{box-sizing:border-box;position:relative;width:min(1120px,100%);height:min(720px,calc(100vh - 64px));max-width:calc(100vw - 64px);max-height:calc(100vh - 64px);background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;box-shadow:var(--dsw-shadow-lv3);display:flex;flex-direction:column;overflow:hidden}
-.dsdr-panel-docked{max-width:calc(100vw - 56px);max-height:calc(100vh - 32px);border-radius:12px 0 0 12px;box-shadow:var(--dsw-shadow-lv3)}.dsdr-panel-docked .dsdr-body{flex-direction:row-reverse}.dsdr-panel-docked .dsdr-files{border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-panel-docked .dsdr-file-tree-resize{margin-left:-2px;margin-right:-3px}.dsdr-panel-docked .dsdr-resize-e{left:-4px;right:auto;cursor:ew-resize}.dsdr-panel-docked .dsdr-resize-se{left:-5px;right:auto;cursor:nesw-resize}.dsdr-files-content-docked>.dsdr-files-list{grid-column:3;border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-files-content-docked>.dsdr-file-tree-resize{grid-column:2}.dsdr-files-content-docked>.dsdr-files-editor{grid-column:1;grid-row:1}
+.dsdr-panel-docked{height:100vh!important;max-width:calc(100vw - 56px);max-height:none;border-width:0 0 0 1px;border-radius:0;box-shadow:var(--dsw-shadow-lv3)}.dsdr-panel-docked .dsdr-body{flex-direction:row-reverse}.dsdr-panel-docked .dsdr-files{border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-panel-docked .dsdr-file-tree-resize{margin-left:-2px;margin-right:-3px}.dsdr-panel-docked .dsdr-resize-e{left:-4px;right:auto;cursor:ew-resize}.dsdr-files-content-docked>.dsdr-files-list{grid-column:3;border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-files-content-docked>.dsdr-file-tree-resize{grid-column:2}.dsdr-files-content-docked>.dsdr-files-editor{grid-column:1;grid-row:1}
 .dsdr-resize{position:absolute;z-index:5}
 .dsdr-resize-e{top:0;right:-3px;width:7px;height:100%;cursor:ew-resize}
 .dsdr-resize-s{bottom:-3px;left:0;width:100%;height:7px;cursor:ns-resize}
@@ -3720,16 +3720,9 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
         role="dialog"
         aria-modal="true"
         aria-label={t('review.title')}
-        style={{ width: `${prefs.width}px`, height: `${prefs.height}px`, ...diffStyleVars(prefs) } as CSSProperties}
+        style={{ width: `${prefs.width}px`, height: docked ? '100vh' : `${prefs.height}px`, ...diffStyleVars(prefs) } as CSSProperties}
       >
-        {docked ? <>
-        <ResizeHandle mode="e" onResize={(dx) => prefsStore.update((d) => { d.width = Math.max(MIN_PANEL_W, Math.min(window.innerWidth - 56, d.width - dx)) })} />
-        <ResizeHandle mode="s" onResize={(_dx, dy) => prefsStore.update((d) => { d.height = Math.max(MIN_PANEL_H, Math.min(window.innerHeight - 32, d.height + dy)) })} />
-        <ResizeHandle mode="se" onResize={(dx, dy) => prefsStore.update((d) => {
-          d.width = Math.max(MIN_PANEL_W, Math.min(window.innerWidth - 56, d.width - dx))
-          d.height = Math.max(MIN_PANEL_H, Math.min(window.innerHeight - 32, d.height + dy))
-        })} />
-        </> : <>
+        {docked ? <ResizeHandle mode="e" onResize={(dx) => prefsStore.update((d) => { d.width = Math.max(MIN_PANEL_W, Math.min(window.innerWidth - 56, d.width - dx)) })} /> : <>
         <ResizeHandle
           mode="e"
           onResize={(dx) =>
@@ -3747,7 +3740,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
           }
         />
         </>}
-        <ResizeHandle
+        {!docked ? <ResizeHandle
           mode="se"
           onResize={(dx, dy) =>
             prefsStore.update((d) => {
@@ -3755,7 +3748,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               d.height = Math.max(MIN_PANEL_H, Math.min(window.innerHeight - 64, d.height + dy))
             })
           }
-        />
+        /> : null}
         <div className="dsdr-header">
           <span className="dsdr-title">{t('review.title')}</span>
           <div className="dsdr-tabs" role="tablist" aria-label={t('review.title')}>
