@@ -56,7 +56,12 @@
 - 从会话记录提取**每一轮**代理修改的文件（含该轮提问摘要），每处展示完整
   按行 diff；无 diff 数据时仍列出路径与工具名；纯客户端计算。
 
-## 一键安装
+## 安装
+
+仓库已包含构建产物（`dist/index.js` 与 `client.js`），可直接使用；修改过源码才需要
+先执行 `npm install && npm run build`。
+
+### 一键安装（推荐）
 
 ```sh
 # macOS / Linux
@@ -66,25 +71,50 @@ bash install.sh
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-脚本会：安装运行依赖 → 链接进 `~/.dsh/profiles/node_modules` → 注册到
-`cordis.patch.yml` → 提示重启。
+脚本会：安装依赖（含 devDependencies，便于本地开发）→ 链接进
+`~/.dsh/profiles/node_modules` → 注册 `cordis.patch.yml` → 提示重启与验证。
 
 ### 手动安装
 
-仓库已包含构建产物（`dist/index.js` 与 `client.js`），修改源码后才需
-`npm install && npm run build`。
+> **用链接而不是拷贝**：`Copy-Item` 复制一份后改源码不会同步，重复安装还会
+> 冲突；用下面的链接（Junction / 符号链接）指向本仓库，改源码即时生效。
 
 ```sh
-# 1. 链接进 profile 依赖目录（Windows 用 Junction 等效命令）
+# 1. 链接进 profile 依赖目录
+#    macOS / Linux：
 ln -sfn "$PWD" ~/.dsh/profiles/node_modules/dsh-plugin-diff-review
+#    Windows（PowerShell，Junction 无需管理员权限）：
+#    New-Item -ItemType Junction -Path "$HOME\.dsh\profiles\node_modules\dsh-plugin-diff-review" -Target "$PWD"
 
 # 2. 注册到 ~/.dsh/profiles/web/cordis.patch.yml
 #    - insert:
 #        - id: diff-review
 #          name: dsh-plugin-diff-review
 
-# 3. 重启 dsh web，会话页头出现「变动」按钮
+# 3. 重启 dsh web
 ```
+
+> 装了 pnpm 的话，也可以用 `dsh plugin --profile web add <本插件绝对路径>` 代替
+> 第 1 步（等价于链接）。pnpm 未安装时先 `npm install -g pnpm`（或 `corepack enable`）。
+
+### 验证
+
+```sh
+dsh --profile web --dump-config | grep dsh-plugin-diff-review
+# 输出应包含：- id: diff-review / name: dsh-plugin-diff-review
+```
+
+重启后会话页头出现「变动」按钮。
+
+### 开发
+
+插件以链接方式接入 profile，改源码后：
+
+```sh
+npm run build   # 重新生成 dist/ 与 client.js
+```
+
+server 端改动需重启 `dsh web`；纯 client 端改动刷新页面即可。
 
 ## 使用
 

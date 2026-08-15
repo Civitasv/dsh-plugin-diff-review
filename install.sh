@@ -5,10 +5,12 @@
 # 用法：  bash install.sh
 # 或：    ./install.sh
 #
-# 步骤：安装运行依赖 → 链接进 profile → 注册 cordis.patch.yml → 提示重启。
+# 步骤：安装依赖（含 devDependencies，便于本地开发）→ 链接进 profile →
+#       注册 cordis.patch.yml → 提示重启与验证。
 set -euo pipefail
 
 NAME="dsh-plugin-diff-review"
+PLUGIN_ID="diff-review"
 PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
 PROFILE_NM="$DSH_HOME/profiles/node_modules"
@@ -17,10 +19,10 @@ PATCH="$DSH_HOME/profiles/web/cordis.patch.yml"
 echo "==> 安装 $NAME"
 echo "    插件目录: $PLUGIN_DIR"
 
-# 1. 运行依赖（仓库自带构建产物，只需生产依赖）
+# 1. 依赖（全量安装：运行依赖 + devDependencies，改源码后可直接 npm run build）
 if [ ! -d "$PLUGIN_DIR/node_modules" ]; then
-  echo "==> 安装运行依赖（npm install --omit=dev）…"
-  (cd "$PLUGIN_DIR" && npm install --omit=dev --no-audit --no-fund)
+  echo "==> 安装依赖（npm install --no-audit --no-fund）…"
+  (cd "$PLUGIN_DIR" && npm install --no-audit --no-fund)
 else
   echo "==> 依赖已存在，跳过 npm install"
 fi
@@ -43,7 +45,7 @@ else
 
 # $NAME (由 install.sh 添加)
 - insert:
-    - id: diff-review
+    - id: $PLUGIN_ID
       name: $NAME
 EOF
   echo "==> 已注册到 $PATCH"
@@ -52,4 +54,5 @@ fi
 echo
 echo "==> 完成。请重启 dsh web："
 echo "    停止当前 dsh web 进程后重新运行：  dsh web"
+echo "    验证：  dsh --profile web --dump-config | grep dsh-plugin-diff-review"
 echo "    重启后打开任意会话，页头会出现「变动」按钮。"
