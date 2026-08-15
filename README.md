@@ -40,7 +40,16 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 - 使用文件或 hunk 旁的按钮暂存、取消暂存或丢弃改动。
 - 点击 **提交**，填写说明后选择提交、提交并推送或推送。
-- 在 diff 行旁添加评论；成功发送给代理后，该评论会从待处理列表移除。
+
+## 评论与摘要
+
+在 diff 行旁添加评论，集中确认后发送给代理；成功发送后，评论会从待处理列表移除。
+
+![评论展示](docs/screenshots/showcase5.png)
+
+代理处理评论后，会在回复下方显示评审结果卡和本次文件改动摘要，可直接进入 Review 查看对应 diff。
+
+![评审与改动摘要卡](docs/screenshots/showcase6.png)
 
 ## 常见问题
 
