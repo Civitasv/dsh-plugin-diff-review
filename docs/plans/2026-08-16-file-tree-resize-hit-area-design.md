@@ -6,10 +6,10 @@ Make the file-tree divider in the Files browser as easy to drag as the divider i
 
 ## Design
 
-Use one shared, wider pointer target for every file-tree resize handle. Keep the visible divider as a thin line, so the layout does not look heavier.
+Render the file-tree resize handle as an independent 12-pixel pointer target positioned over the boundary between the tree and editor. Keep the visible divider as a centered one-pixel line, so the layout does not look heavier.
 
-The Files browser grid must allocate the same wider column to the resize handle; otherwise its grid track constrains the pointer target even when the component itself is wider.
+The Files browser grid keeps only the tree and editor content tracks. The resize handle overlays their boundary instead of occupying a middle grid track, preventing either adjacent pane from constraining or covering the pointer target. The same positioning must work in normal and docked layouts.
 
 ## Verification
 
-Add a lightweight source-level UI test that asserts the shared handle width and Files browser grid track use the same constant. Run the UI smoke test, type check, and build after the change.
+Extend the browser UI smoke test to locate the boundary, verify that hit-testing returns the resize handle with a column-resize cursor, dispatch a pointer drag, and assert that the tree width changes. Cover both normal and docked positioning where the harness supports them. Run the UI smoke test, type check, and build after the change.
