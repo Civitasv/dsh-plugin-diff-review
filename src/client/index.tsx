@@ -983,6 +983,8 @@ const REVIEW_CSS = `
 .dsdr-code-editor{min-height:0;flex:1;overflow:hidden;background:var(--dsw-alias-bg-layer-1)}.dsdr-cm-host{height:100%;min-height:0}.dsdr-cm-host .cm-editor{height:100%;background:var(--dsw-alias-bg-layer-1)}.dsdr-cm-host .cm-scroller{overflow:auto;font-family:var(--dsw-font-mono);line-height:21px}.dsdr-cm-host .cm-content{padding:14px 16px;min-height:100%;caret-color:var(--dsw-alias-label-primary)}.dsdr-cm-host .cm-gutters{border-right:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-tertiary);padding-top:14px}.dsdr-cm-host .cm-lineNumbers .cm-gutterElement{min-width:42px;padding:0 10px 0 8px}.dsdr-cm-host .cm-activeLine,.dsdr-cm-host .cm-activeLineGutter{background:color-mix(in srgb,var(--dsw-alias-interactive-bg-hover) 70%,transparent)}.dsdr-cm-host .cm-selectionBackground,.dsdr-cm-host ::selection{background:rgba(91,140,255,.42)!important}.dsdr-cm-host .cm-focused{outline:none}
 .dsdr-image-preview{display:flex;align-items:center;justify-content:center;min-height:0;flex:1;overflow:auto;padding:24px;background:var(--dsw-alias-bg-layer-1)}.dsdr-image-preview img{max-width:100%;max-height:100%;object-fit:contain;box-shadow:var(--dsw-shadow-lv2)}.dsdr-files-unavailable{display:flex;align-items:center;justify-content:center;min-height:0;flex:1;color:var(--dsw-alias-label-tertiary);font-size:13px}
 .dsdr-files-actions{display:flex;align-items:center;gap:6px;padding:8px 10px;border-top:1px solid var(--dsw-alias-border-l1)}
+.dsdr-files-item:hover{position:relative;background:transparent}.dsdr-files-item:hover::before{content:"";position:absolute;z-index:0;inset:-5px 0;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);pointer-events:none}
+.dsdr-files-menu{min-width:196px;border-radius:12px}.dsdr-files-menu button{display:flex;align-items:center;gap:9px;border-radius:7px;padding:8px 10px;font:13px/18px var(--dsw-font-sans)}.dsdr-files-menu-icon{display:inline-grid;place-items:center;width:17px;color:var(--dsw-alias-label-tertiary);font:14px/1 var(--dsw-font-sans)}
 /* --- fallback user bubble (native look) --- */
 .dsdr-fallback-user{flex-direction:column;align-items:flex-end;gap:6px;display:flex}
 .dsdr-fallback-user-stack{flex-direction:column;align-items:flex-end;gap:8px;min-width:0;max-width:min(525px,82%);display:flex}
@@ -1944,12 +1946,17 @@ async function loadRepos(cwd: string): Promise<ReposResponse> {
 /** Open a file (optionally at a line) in the user's editor via open-editor. */
 async function openInEditor(cwd: string, path: string, line?: number): Promise<{ ok: boolean; error?: string }> {
   const abs = path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path) ? path : `${cwd}/${path}`
-  const res = await fetch(OPEN_EDITOR_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ path: abs, line }),
-  })
-  return (await res.json().catch(() => ({ ok: false, error: 'invalid response' }))) as { ok: boolean; error?: string }
+  try {
+    const res = await fetch(OPEN_EDITOR_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: abs, line }),
+    })
+    const data = (await res.json().catch(() => ({ ok: false, error: 'invalid response from open-editor' }))) as { ok: boolean; error?: string }
+    return res.ok && data.ok ? data : { ok: false, error: data.error ?? `open-editor request failed (${res.status})` }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'open-editor request failed' }
+  }
 }
 
 /** Short relative time for commit rows ("just now" / "3 min ago" / …). */
@@ -2262,6 +2269,10 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onActivateFile
       if (data.ok) { savedContent.current = content; setMtime(data.mtime ?? mtime); setNotice(t('files.saved')) } else setNotice(data.error ?? 'Failed to save file')
     } catch { setNotice('Failed to save file') } finally { setSaving(false) }
   }
+  const openSelectedInEditor = async (path: string) => {
+    const result = await openInEditor(cwd, path)
+    setNotice(result.ok ? 'Opened in editor' : result.error ?? 'Failed to open in editor')
+  }
   useEffect(() => {
     if (target && target !== selected) void open(target)
   }, [target])
@@ -2305,7 +2316,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onActivateFile
           {selected ? <div className="dsdr-files-actions"><span className="dsdr-notice">{saving ? t('files.loading') : notice ?? ''}</span></div> : null}
         </div>
       </div>
-      {menu ? <div className="dsdr-files-menu" role="menu" style={{ left: menu.x, top: menu.y }} onPointerLeave={() => setMenu(null)}><button type="button" role="menuitem" onClick={() => { void openInEditor(cwd, menu.path); setMenu(null) }}>Open in editor</button><button type="button" role="menuitem" onClick={() => { void writeClipboard(menu.path); setMenu(null) }}>Copy path</button><button type="button" role="menuitem" onClick={() => { onAddToChat(menu.path); setMenu(null) }}>Add to chat</button></div> : null}
+      {menu ? <div className="dsdr-files-menu" role="menu" style={{ left: menu.x, top: menu.y }} onPointerLeave={() => setMenu(null)}><button type="button" role="menuitem" onClick={() => { void openSelectedInEditor(menu.path); setMenu(null) }}><span className="dsdr-files-menu-icon">↗</span>Open in editor</button><button type="button" role="menuitem" onClick={() => { void writeClipboard(menu.path); setMenu(null) }}><span className="dsdr-files-menu-icon">⧉</span>Copy path</button><button type="button" role="menuitem" onClick={() => { onAddToChat(menu.path); setMenu(null) }}><span className="dsdr-files-menu-icon">+</span>Add to chat</button></div> : null}
     </section>
   )
 }
@@ -3855,7 +3866,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
             </div>
           </div>
         ) : null}
-        {reviewFileMenu ? <div className="dsdr-files-menu" role="menu" style={{ left: reviewFileMenu.x, top: reviewFileMenu.y }} onPointerLeave={() => setReviewFileMenu(null)}><button type="button" role="menuitem" onClick={() => { void openInEditor(activeCwd ?? cwd, reviewFileMenu.path); setReviewFileMenu(null) }}>Open in editor</button><button type="button" role="menuitem" onClick={() => { void writeClipboard(reviewFileMenu.path); setReviewFileMenu(null) }}>Copy path</button><button type="button" role="menuitem" onClick={() => { addFileToChat(reviewFileMenu.path); setReviewFileMenu(null) }}>Add to chat</button></div> : null}
+        {reviewFileMenu ? <div className="dsdr-files-menu" role="menu" style={{ left: reviewFileMenu.x, top: reviewFileMenu.y }} onPointerLeave={() => setReviewFileMenu(null)}><button type="button" role="menuitem" onClick={() => { void openFile(reviewFileMenu.path); setReviewFileMenu(null) }}><span className="dsdr-files-menu-icon">↗</span>Open in editor</button><button type="button" role="menuitem" onClick={() => { void writeClipboard(reviewFileMenu.path); setReviewFileMenu(null) }}><span className="dsdr-files-menu-icon">⧉</span>Copy path</button><button type="button" role="menuitem" onClick={() => { addFileToChat(reviewFileMenu.path); setReviewFileMenu(null) }}><span className="dsdr-files-menu-icon">+</span>Add to chat</button></div> : null}
         {surface === 'review' ? (
           <div className="dsdr-review-toolbar">
             {tab === 'workspace' && status?.isRepo ? (
