@@ -103,7 +103,12 @@ async function injectToSession(sessions: ISessions | undefined, sessionId: Sessi
   const session = binding?.session
   if (session) {
     try {
-      const result = await session.prompt([{ type: 'text', text }], 'queue')
+      // 'steer' (not 'queue'): the review package is injected as a steering
+      // message — the agent handles it on its next step (or the idle agent is
+      // woken immediately), so it never shows up as a queued item above the
+      // input. 'queue' would append after the current turn and surface as a
+      // "排队信息" strip instead.
+      const result = await session.prompt([{ type: 'text', text }], 'steer')
       if (result.ok) return 'sent'
     } catch {
       // fall through to the copy fallback
@@ -2019,8 +2024,8 @@ function userMessageText(content: readonly UserBlock[]): string {
   return out
 }
 
-/** Full props of our shadowed user-node renderer (t bound to our namespace). */
-type UserReviewNodeProps = PropsRuntime<'conversation.chat.node', 'user'> & PropsLocale<'diff-review'>
+/** Full props of our shadowed user/steering node renderers (t bound to our namespace). */
+type UserReviewNodeProps = PropsRuntime<'conversation.chat.node', 'user' | 'steering'> & PropsLocale<'diff-review'>
 /** Translator bound to the plugin namespace (shared by the card/bubble). */
 type CardT = PropsLocale<'diff-review'>['t']
 
@@ -2284,7 +2289,8 @@ function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, 
   }
 
   // Codex-style auto-carry: when the user submits a message while comments are
-  // pending, queue the full review package right behind it (no send button).
+  // pending, steer the full review package into the turn right behind it — the
+  // agent handles it on its next step, with no queued-item strip above the input.
   /** Mark the carried items as sent so they are never re-sent (persisted per cwd). */
   const markSent = () => {
     if (!cwd) return
@@ -4045,18 +4051,22 @@ export function apply(ctx: ClientContext): void {
   )
   // The carried review package renders in the transcript as a Codex-style
   // card: shadow the shell's user-node renderer (priority -1 = lowest wins)
-  // and re-render non-package messages with a native-look bubble.
-  ctx.slots.inject('conversation.chat.node', () =>
-    ctx.slots.register(
-      {
-        name: 'conversation.chat.node',
-        key: 'user',
-        priority: -1,
-        locale: LOCALE_NS,
-      },
-      UserReviewNodeView,
-    ),
-  )
+  // and re-render non-package messages with a native-look bubble. The
+  // steering kind gets the same treatment — the package is injected with
+  // prompt(..., 'steer'), so it lands in the transcript as a steering node.
+  for (const key of ['user', 'steering'] as const) {
+    ctx.slots.inject('conversation.chat.node', () =>
+      ctx.slots.register(
+        {
+          name: 'conversation.chat.node',
+          key,
+          priority: -1,
+          locale: LOCALE_NS,
+        },
+        UserReviewNodeView,
+      ),
+    )
+  }
   // The plugin's own settings tab inside 设置 → 插件 (not the General section).
   // The plugin's whole configuration lives in one card inside
   // 设置 → 插件 → 插件配置 (settings.plugin.item): font/size.
