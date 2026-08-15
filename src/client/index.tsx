@@ -948,16 +948,17 @@ const REVIEW_CSS = `
 .dsdr-turn-summary-file-stats{margin-left:auto;flex:none;font-family:var(--dsw-font-sans,system-ui);font-size:12px}
 /* --- Files drawer --- */
 .dsdr-files-workspace{display:flex;min-height:0;flex:1;flex-direction:column;background:var(--dsw-alias-bg-module-platform)}
-.dsdr-files-toolbar{display:flex;align-items:center;padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l1)}
-.dsdr-files-search{width:100%;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);padding:7px 9px;font:inherit;font-size:12px}
+.dsdr-files-toolbar{display:flex;align-items:center;padding:9px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform)}
+.dsdr-files-search{width:100%;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);padding:7px 10px;font:inherit;font-size:12px;line-height:18px}
+.dsdr-files-search:focus{outline:none;border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-brand-primary) 15%,transparent)}
 .dsdr-files-content{display:grid;grid-template-columns:minmax(230px,31%) 1fr;min-height:0;flex:1}
-.dsdr-files-list{overflow:auto;border-right:1px solid var(--dsw-alias-border-l1);padding:8px 6px}
-.dsdr-files-item{display:flex;width:100%;box-sizing:border-box;border:0;border-radius:7px;background:transparent;padding:6px 8px;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-mono);font-size:11px;line-height:16px;text-align:left;cursor:pointer}
+.dsdr-files-list{overflow:auto;border-right:1px solid var(--dsw-alias-border-l1);padding:8px 6px;background:var(--dsw-alias-bg-layer-1)}
+.dsdr-files-item{display:flex;width:100%;box-sizing:border-box;border:0;border-radius:6px;background:transparent;padding:6px 9px;color:var(--dsw-alias-label-secondary);font:11px/17px var(--dsw-font-mono);text-align:left;cursor:pointer}
 .dsdr-files-item:hover,.dsdr-files-item-active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsdr-files-menu{position:fixed;z-index:80;display:flex;min-width:180px;flex-direction:column;gap:2px;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-files-menu button{border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);padding:8px 10px;text-align:left;font:12px var(--dsw-font-sans);cursor:pointer}.dsdr-files-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.dsdr-files-editor{display:flex;min-width:0;flex-direction:column}.dsdr-files-path{padding:8px 12px;color:var(--dsw-alias-label-tertiary);font:11px var(--dsw-font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid var(--dsw-alias-border-l1)}
-.dsdr-code-editor{display:flex;min-height:0;flex:1;background:var(--dsw-alias-bg-layer-1);overflow:hidden}.dsdr-code-lines{flex:none;width:48px;box-sizing:border-box;overflow:hidden;padding:12px 8px 12px 0;border-right:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-tertiary);font:12px/20px var(--dsw-font-mono);text-align:right;user-select:none}.dsdr-code-lines span{display:block;height:20px}
-.dsdr-code-layer{position:relative;min-width:0;min-height:0;flex:1;overflow:hidden}.dsdr-code-highlight,.dsdr-files-text{box-sizing:border-box;position:absolute;inset:0;margin:0;padding:12px 14px;border:0;font:12px/20px var(--dsw-font-mono);tab-size:2;white-space:pre;overflow:auto}.dsdr-code-highlight{pointer-events:none;color:var(--dsw-alias-label-primary);background:transparent}.dsdr-files-text{resize:none;background:transparent;color:transparent;caret-color:var(--dsw-alias-label-primary);outline:0;-webkit-text-fill-color:transparent}.dsdr-files-text::selection{background:rgba(91,140,255,.35)}
+.dsdr-files-editor{display:flex;min-width:0;flex-direction:column;background:var(--dsw-alias-bg-layer-1)}.dsdr-files-path{padding:10px 14px;color:var(--dsw-alias-label-secondary);font:12px/18px var(--dsw-font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform)}
+.dsdr-code-editor{display:flex;min-height:0;flex:1;background:var(--dsw-alias-bg-layer-1);overflow:hidden}.dsdr-code-lines{flex:none;width:56px;box-sizing:border-box;overflow:hidden;padding:14px 10px 14px 0;border-right:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-tertiary);font:12px/21px var(--dsw-font-mono);text-align:right;user-select:none;background:var(--dsw-alias-bg-module-platform)}.dsdr-code-lines-inner{will-change:transform}.dsdr-code-lines span{display:block;height:21px}
+.dsdr-code-layer{position:relative;min-width:0;min-height:0;flex:1;overflow:hidden}.dsdr-code-highlight,.dsdr-files-text{box-sizing:border-box;position:absolute;inset:0;margin:0;padding:14px 16px;border:0;font:13px/21px var(--dsw-font-mono);tab-size:2;white-space:pre}.dsdr-code-highlight{pointer-events:none;overflow:hidden;color:var(--dsw-alias-label-primary);background:transparent}.dsdr-code-highlight code{display:block;min-width:max-content}.dsdr-files-text{resize:none;overflow:scroll;background:transparent;color:transparent;caret-color:var(--dsw-alias-label-primary);outline:0;-webkit-text-fill-color:transparent}.dsdr-files-text::selection{background:rgba(91,140,255,.42)}
 .dsdr-code-keyword{color:#c586c0}.dsdr-code-string{color:#ce9178}.dsdr-code-comment{color:#6a9955}.dsdr-code-number{color:#b5cea8}.dsdr-code-plain{color:var(--dsw-alias-label-primary)}
 .dsdr-image-preview{display:flex;align-items:center;justify-content:center;min-height:0;flex:1;overflow:auto;padding:24px;background:var(--dsw-alias-bg-layer-1)}.dsdr-image-preview img{max-width:100%;max-height:100%;object-fit:contain;box-shadow:var(--dsw-shadow-lv2)}.dsdr-files-unavailable{display:flex;align-items:center;justify-content:center;min-height:0;flex:1;color:var(--dsw-alias-label-tertiary);font-size:13px}
 .dsdr-files-actions{display:flex;align-items:center;gap:6px;padding:8px 10px;border-top:1px solid var(--dsw-alias-border-l1)}
@@ -2115,6 +2116,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat }:
   const [menu, setMenu] = useState<{ path: string; x: number; y: number } | null>(null)
   const savedContent = useRef('')
   const codeRef = useRef<HTMLPreElement>(null)
+  const lineNumbersRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let alive = true
@@ -2176,10 +2178,10 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat }:
           <div className="dsdr-files-path">{selected ?? (loading ? t('files.loading') : '')}</div>
           {selected && fileKind === 'text' ? (
             <div className="dsdr-code-editor">
-              <div className="dsdr-code-lines" aria-hidden="true">{content.split('\n').map((_, index) => <span key={index}>{index + 1}</span>)}</div>
+              <div className="dsdr-code-lines" aria-hidden="true"><div ref={lineNumbersRef} className="dsdr-code-lines-inner">{content.split('\n').map((_, index) => <span key={index}>{index + 1}</span>)}</div></div>
               <div className="dsdr-code-layer">
                 <pre ref={codeRef} className="dsdr-code-highlight" aria-hidden="true"><code>{highlightCode(content)}</code></pre>
-                <textarea className="dsdr-files-text" value={content} onChange={(event) => setContent(event.target.value)} onScroll={(event) => { if (codeRef.current) { codeRef.current.scrollTop = event.currentTarget.scrollTop; codeRef.current.scrollLeft = event.currentTarget.scrollLeft } }} spellCheck={false} />
+                <textarea className="dsdr-files-text" wrap="off" value={content} onChange={(event) => setContent(event.target.value)} onScroll={(event) => { const { scrollTop, scrollLeft } = event.currentTarget; if (codeRef.current) { codeRef.current.scrollTop = scrollTop; codeRef.current.scrollLeft = scrollLeft }; if (lineNumbersRef.current) lineNumbersRef.current.style.transform = `translateY(${-scrollTop}px)` }} spellCheck={false} />
               </div>
             </div>
           ) : null}
