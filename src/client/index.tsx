@@ -31,7 +31,7 @@ import { json } from '@codemirror/lang-json'
 import { markdown } from '@codemirror/lang-markdown'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
-import { Tree, type NodeRendererProps } from 'react-arborist'
+import { Tree, type NodeRendererProps, type TreeApi } from 'react-arborist'
 import type { ClientContext, ISessions, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -701,6 +701,7 @@ const REVIEW_CSS = `
 .dsdr-tab{box-sizing:border-box;min-height:26px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:2px 10px;font:inherit;font-size:12px;line-height:18px}
 .dsdr-tab:hover{color:var(--dsw-alias-label-secondary)}
 .dsdr-tab-active{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsdr-file-tab{display:inline-flex;align-items:center;gap:5px;max-width:180px;min-width:0;padding-right:5px}.dsdr-file-tab>span:not(.dsdr-file-tab-close){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsdr-file-tab .dsdr-tree-file-icon{width:15px;height:15px;font-size:8px}.dsdr-file-tab-close{display:inline-flex;align-items:center;justify-content:center;flex:none;width:16px;height:16px;border-radius:4px;color:var(--dsw-alias-label-tertiary)}.dsdr-file-tab-close:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dsdr-file-tab-close svg{width:11px;height:11px}
 .dsdr-scope{display:inline-flex;align-items:center;gap:6px;margin-left:8px}
 .dsdr-scope .dsdr-sel-trigger{min-width:110px;height:26px;font-size:12px;line-height:18px;padding:0 8px;background:var(--dsw-alias-bg-layer-2)}
 .dsdr-spacer{flex:1}
@@ -2277,6 +2278,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat, t
             onToggleDir={onToggleDir}
             depth={0}
             fillHeight
+            activePath={selected}
             renderLeaf={(leaf) => (
               <div className={'dsdr-files-item' + (selected === leaf.path ? ' dsdr-files-item-active' : '')} onContextMenu={(event) => { event.preventDefault(); setMenu({ path: leaf.path, x: event.clientX, y: event.clientY }) }} title={leaf.path}>
                 <button type="button" className="dsdr-files-item-main" onClick={() => void open(leaf.path)}><FileTreeGlyph path={leaf.path} /><span className="dsdr-files-item-name">{leaf.name}</span></button>
@@ -2394,9 +2396,11 @@ function FileTreeView<T>(props: {
   depth: number
   renderLeaf: (leaf: TreeLeaf<T>) => ReactNode
   fillHeight?: boolean
+  activePath?: string | null
 }): ReactElement {
-  const { nodes, collapsed, onToggleDir, renderLeaf, fillHeight = false } = props
+  const { nodes, collapsed, onToggleDir, renderLeaf, fillHeight = false, activePath = null } = props
   const hostRef = useRef<HTMLDivElement>(null)
+  const treeRef = useRef<TreeApi<TreeNode<T>> | undefined>(undefined)
   const [hostHeight, setHostHeight] = useState(0)
   const flatCount = useMemo(() => {
     const count = (items: TreeNode<T>[]): number => items.reduce((total, item) => total + 1 + (item.kind === 'dir' ? count(item.children) : 0), 0)
@@ -2424,12 +2428,23 @@ function FileTreeView<T>(props: {
     observer.observe(element)
     return () => observer.disconnect()
   }, [fillHeight])
+  useEffect(() => {
+    if (!activePath) return
+    const frame = requestAnimationFrame(() => {
+      const tree = treeRef.current
+      if (!tree) return
+      tree.openParents(activePath)
+      void tree.scrollTo(activePath, 'center')
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [activePath, nodes])
 
   const height = fillHeight ? Math.max(1, hostHeight) : Math.max(30, Math.min(420, flatCount * 29 + 8))
   return (
     <div ref={hostRef} className={`dsdr-arborist${fillHeight ? ' dsdr-arborist-fill' : ''}`}>
       {(!fillHeight || hostHeight > 0) ? (
         <Tree<TreeNode<T>>
+          ref={treeRef}
           key={treeKey}
           data={nodes}
           width="100%"
@@ -2943,7 +2958,8 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   // Multi-repo: repos detected under the workspace + the selected one.
   const [repos, setRepos] = useState<{ path: string; branch: string | null }[]>([])
   const [repoPath, setRepoPath] = useState<string | null>(null)
-  const [surface, setSurface] = useState<'review' | 'files'>('review')
+  const [surface, setSurface] = useState<'review' | string>('review')
+  const [openFileTabs, setOpenFileTabs] = useState<string[]>([])
   const [filesTarget, setFilesTarget] = useState<string | null>(null)
   const [collapsedReviewFiles, setCollapsedReviewFiles] = useState<ReadonlySet<string>>(() => new Set())
   const [fileTreeWidth, setFileTreeWidth] = useState(() => {
@@ -3524,8 +3540,20 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     if (!result.ok) setNotice({ kind: 'error', text: `${t('editor.failed')}: ${result.error ?? ''}` })
   }
   const openInFilesTab = (path: string) => {
+    setOpenFileTabs((previous) => previous.includes(path) ? previous : [...previous, path])
     setFilesTarget(path)
-    setSurface('files')
+    setSurface(path)
+  }
+  const closeFilesTab = (path: string) => {
+    setOpenFileTabs((previous) => {
+      const next = previous.filter((item) => item !== path)
+      if (surface === path) {
+        const fallback = next[next.length - 1] ?? 'review'
+        setSurface(fallback)
+        setFilesTarget(fallback === 'review' ? null : fallback)
+      }
+      return next
+    })
   }
   const toggleReviewFile = (path: string) => {
     setCollapsedReviewFiles((previous) => {
@@ -3732,7 +3760,11 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
           <span className="dsdr-title">{t('review.title')}</span>
           <div className="dsdr-tabs" role="tablist" aria-label={t('review.title')}>
             <button type="button" role="tab" aria-selected={surface === 'review'} className={`dsdr-tab${surface === 'review' ? ' dsdr-tab-active' : ''}`} onClick={() => setSurface('review')}>{t('review.title')}</button>
-            <button type="button" role="tab" aria-selected={surface === 'files'} className={`dsdr-tab${surface === 'files' ? ' dsdr-tab-active' : ''}`} onClick={() => setSurface('files')}>{t('files.title')}</button>
+            {openFileTabs.map((path) => (
+              <button key={path} type="button" role="tab" aria-selected={surface === path} className={`dsdr-tab dsdr-file-tab${surface === path ? ' dsdr-tab-active' : ''}`} onClick={() => { setSurface(path); setFilesTarget(path) }} title={path}>
+                <FileTreeGlyph path={path} /><span>{baseName(path)}</span><span role="button" className="dsdr-file-tab-close" aria-label={`Close ${baseName(path)}`} onClick={(event) => { event.stopPropagation(); closeFilesTab(path) }}><IconX /></span>
+              </button>
+            ))}
           </div>
           {surface === 'review' && tab === 'workspace' && status?.isRepo ? (
             <span className="dsdr-scope">
@@ -3794,7 +3826,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
             </div>
           </div>
         ) : null}
-        {surface === 'files' ? (
+        {surface !== 'review' ? (
           <FilesWorkspace cwd={cwd} t={t} collapsed={collapsedDirs} onToggleDir={toggleDir} target={filesTarget} treeWidth={fileTreeWidth} onTreeWidthChange={setFileTreeWidth} docked={docked} onAddToChat={(path) => {
             composerDraftStore.update((draft) => {
               draft.sessionId = currentId ?? null
