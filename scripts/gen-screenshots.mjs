@@ -47,6 +47,17 @@ const COMMON_CSS = `
   .tab{min-height:26px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);padding:2px 10px;font-size:12px;line-height:18px;cursor:default}
   .tab.active{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
   .subtitle{color:var(--dsw-alias-label-tertiary);font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .scope{min-height:26px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);padding:2px 10px;font-size:12px;line-height:18px;display:inline-flex;align-items:center;gap:6px}
+  .scope .caret{font-size:10px;color:var(--dsw-alias-label-tertiary)}
+  .verdict{display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--dsw-alias-bg-layer-2);border-bottom:1px solid var(--dsw-alias-border-l1);font-size:12px;flex:none}
+  .verdict .ok{display:inline-flex;align-items:center;gap:5px;color:#1f9d55;font-weight:600}
+  .verdict .meta{color:var(--dsw-alias-label-tertiary);font-size:11px}
+  .finding{display:flex;flex-direction:column;gap:4px;margin:6px 16px;padding:8px 12px;background:var(--dsw-alias-bg-layer-2);border-left:3px solid #ffa657;border-radius:6px;font-size:12px}
+  .finding .fhead{display:flex;align-items:center;gap:6px;font-weight:600}
+  .finding .tag{font-size:10px;line-height:14px;border-radius:4px;padding:0 4px;background:rgba(255,166,87,.16);color:#ffa657;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .finding .fbody{color:var(--dsw-alias-label-secondary);font-size:12px}
+  .finding .floc{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:400}
+  .comment-badge{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;border-radius:8px;background:#1f9d55;color:#fff;font-size:10px;font-family:ui-monospace,Menlo,Consolas,monospace;margin-left:8px;vertical-align:middle}
   .spacer{flex:1}
   .btn{min-height:28px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary);padding:3px 10px;font-size:12px;line-height:18px;display:inline-flex;align-items:center;gap:5px;cursor:default}
   .btn.primary{border-color:var(--dsw-static-neutral-bluish-400);color:var(--dsw-alias-label-primary)}
@@ -147,8 +158,11 @@ const DIFF_ROWS = [
   ['ctx', '   } catch (e) {'],
   ['ctx', '     setError(e instanceof Error ? e.message : String(e))'],
 ]
-function diffRows(rows) {
-  return rows.map(([kind, text]) => `<div class="line ${kind}">${text.replace(/</g, '&lt;')}</div>`).join('\n')
+function diffRows(rows, badgeAt = -1) {
+  return rows.map(([kind, text], i) => {
+    const badge = i === badgeAt ? '<span class="comment-badge">1</span>' : ''
+    return `<div class="line ${kind}">${text.replace(/</g, '&lt;')}${badge}</div>`
+  }).join('\n')
 }
 
 /** View 1: workspace pane with sections + timeline + file diff. */
@@ -158,6 +172,7 @@ function workspacePage() {
   <div class="head">
     <span class="title">变动</span>
     <span class="tabs"><span class="tab">会话更改</span><span class="tab active">工作区</span></span>
+    <span class="scope">范围：全部 <span class="caret">▾</span></span>
     <span class="subtitle">main · 9+ 3- · 领先 2</span>
     <span class="spacer"></span>
     <span class="btn primary">全部采纳</span>
@@ -190,6 +205,12 @@ function workspacePage() {
       </div>
     </div>
     <div class="diff">
+      <div class="verdict">
+        <span class="ok">✓ 补丁正确</span>
+        <span class="meta">2 条发现 · deepseek-chat · 置信度 0.87</span>
+        <span class="spacer"></span>
+        <span class="btn primary" style="padding:2px 10px">发送发现给代理</span>
+      </div>
       <div class="dhead">
         <span class="dpath">src/server/index.ts<span class="hash"></span></span>
         <span class="dstat">9+ 3-</span>
@@ -197,7 +218,11 @@ function workspacePage() {
         <span class="btn primary" style="padding:2px 10px">采纳</span>
         <span class="btn danger" style="padding:2px 10px">丢弃</span>
       </div>
-      <div class="scroll"><pre class="pre">${diffRows(DIFF_ROWS)}</pre></div>
+      <div class="scroll"><pre class="pre">${diffRows(DIFF_ROWS, 4)}</pre></div>
+      <div class="finding">
+        <div class="fhead"><span class="tag">P1</span> 避免重复 statSync <span class="floc">src/server/index.ts:24-25</span></div>
+        <div class="fbody">每次 loadWorkspace 都会 statSync 文件，结果可缓存，避免无效 IO。</div>
+      </div>
     </div>
   </div>
 </div>
@@ -288,7 +313,7 @@ function sessionPage() {
         <span class="dstat">str_replace_editor</span>
         <span class="toggle"><span>单栏</span><span class="on">双栏</span></span>
       </div>
-      <div class="scroll"><pre class="pre">${diffRows(DIFF_ROWS)}</pre></div>
+      <div class="scroll"><pre class="pre">${diffRows(DIFF_ROWS, 4)}</pre></div>
     </div>
   </div>
 </div>
