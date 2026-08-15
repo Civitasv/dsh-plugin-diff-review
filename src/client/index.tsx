@@ -63,7 +63,7 @@ const OPEN_EDITOR_URL = 'open-editor/open'
 const STYLE_TAG = 'dsh-plugin-diff-review/review.css'
 
 /** Open state shared between the header trigger (session scope) and the overlay (root scope). */
-const overlayStore = createSnapshotStore<{ open: boolean; cwd: string | null; key: number; focus?: { path: string; line?: number } | null }>({
+const overlayStore = createSnapshotStore<{ open: boolean; cwd: string | null; key: number; focus?: { path: string; line?: number; tab?: 'session' | 'workspace' } | null }>({
   open: false,
   cwd: null,
   key: 0,
@@ -737,6 +737,9 @@ const REVIEW_CSS = `
 .dsdr-verdict-model{font-size:11px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
 .dsdr-finding-card{display:flex;flex-direction:column;gap:4px;margin:4px 0 6px;padding:8px 16px;background:var(--dsw-alias-bg-module-platform);border-top:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1)}
 .dsdr-saved-comment-loc{font-size:10px;color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-font-mono)}
+.dsdr-saved-comment-jump{display:flex;flex-direction:column;gap:2px;width:100%;min-width:0;border:0;background:transparent;border-radius:6px;padding:2px;text-align:left;cursor:pointer;font:inherit}
+.dsdr-saved-comment-jump:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsdr-saved-comment-jump:hover .dsdr-saved-comment-loc{color:var(--dsw-alias-label-secondary)}
 .dsdr-saved-comment-view{white-space:pre-wrap;overflow-wrap:anywhere;resize:none}
 .dsdr-finding-card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .dsdr-finding-card-title{flex:1;min-width:0;font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary)}
@@ -1445,21 +1448,54 @@ function CommentBox({ comment, busy, onUpdate, onDelete, t }: { comment: ReviewC
       />
     )
   }
+  /** Jump to the comment's change block in the review panel (like the dock chips). */
+  const jump = () => {
+    overlayStore.update((d) => {
+      d.open = true
+      d.focus = {
+        path: comment.path,
+        line: comment.lineNew ?? comment.lineOld ?? undefined,
+        tab: comment.source === 'session' ? 'session' : 'workspace',
+      }
+      d.key = d.key + 1
+    })
+  }
   return (
     <div className="dsdr-comment-editor">
-      <div className="dsdr-saved-comment-loc">
-        {comment.path}
-        {comment.lineNew !== null ? `:${comment.lineNew}` : comment.lineOld !== null ? ` (old:${comment.lineOld})` : ''}
-      </div>
-      <div className="dsdr-comment-input dsdr-saved-comment-view">{comment.text}</div>
+      <button
+        type="button"
+        className="dsdr-saved-comment-jump"
+        title={t('review.dockJump')}
+        onClick={jump}
+      >
+        <span className="dsdr-saved-comment-loc">
+          {comment.path}
+          {comment.lineNew !== null ? `:${comment.lineNew}` : comment.lineOld !== null ? ` (old:${comment.lineOld})` : ''}
+        </span>
+        <span className="dsdr-comment-input dsdr-saved-comment-view">{comment.text}</span>
+      </button>
       <div className="dsdr-comment-actions">
-        <button type="button" className="dsdr-btn" disabled={busy} onClick={() => {
-          setText(comment.text)
-          setEditing(true)
-        }}>
+        <button
+          type="button"
+          className="dsdr-btn"
+          disabled={busy}
+          onClick={(e) => {
+            e.stopPropagation()
+            setText(comment.text)
+            setEditing(true)
+          }}
+        >
           {t('comment.edit')}
         </button>
-        <button type="button" className="dsdr-btn dsdr-btn-danger" disabled={busy} onClick={() => onDelete(comment.id)}>
+        <button
+          type="button"
+          className="dsdr-btn dsdr-btn-danger"
+          disabled={busy}
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete(comment.id)
+          }}
+        >
           {t('comment.delete')}
         </button>
       </div>
@@ -2340,7 +2376,11 @@ function DiffReviewComposerDock({ sessionId, useSessions, useSession, sessions, 
     overlayStore.update((d) => {
       d.open = true
       d.cwd = cwd
-      d.focus = { path: comment.path, line: comment.lineNew ?? comment.lineOld ?? undefined }
+      d.focus = {
+        path: comment.path,
+        line: comment.lineNew ?? comment.lineOld ?? undefined,
+        tab: comment.source === 'session' ? 'session' : 'workspace',
+      }
       d.key = d.key + 1
     })
   }
@@ -2640,10 +2680,51 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     })
   }, [comments, activeCwd, status, review])
 
-  // Jump to a change block from the composer dock (comment click).
+  // Jump to a change block from the composer dock (comment click). Comments
+  // created in the session tab anchor to RELATIVE hunk lines, so those jumps
+  // stay in the session tab; workspace comments jump to real file lines.
   useEffect(() => {
     const focus = storeState.focus
     if (!storeState.open || !cwd || !focus) return
+    if (focus.tab === 'session') {
+      // Session-tab jump: pick the most recent round that changed this file.
+      let targetRound: SessionRound | null = null
+      let targetChange: RoundChange | null = null
+      for (let i = rounds.length - 1; i >= 0; i--) {
+        const change = rounds[i].changes.find((c) => {
+          if (c.path === focus.path) return true
+          if (isAbsPath(c.path)) {
+            const rel = c.path.startsWith(cwd) ? c.path.slice(cwd.length).replace(/^[\\/]+/, '') : c.path
+            if (rel === focus.path) return true
+          }
+          return baseName(c.path) === baseName(focus.path)
+        })
+        if (change) {
+          targetRound = rounds[i]
+          targetChange = change
+          break
+        }
+      }
+      setTab('session')
+      if (targetRound && targetChange) {
+        setSelectedRound(targetRound.round)
+        setSelectedPath(targetChange.path)
+      } else {
+        setSelectedRound(null)
+        setSelectedPath(null)
+      }
+      setJumpLine(focus.line ?? null)
+      const scrollTimer = setTimeout(() => {
+        if (focus.line != null) {
+          document.querySelector(`[data-dsdr-line="${focus.line}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        }
+      }, 80)
+      const clearTimer = setTimeout(() => setJumpLine(null), 2500)
+      return () => {
+        clearTimeout(scrollTimer)
+        clearTimeout(clearTimer)
+      }
+    }
     setTab('workspace')
     setSelected(focus.path)
     setJumpLine(focus.line ?? null)
@@ -2938,6 +3019,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       lineOld: commentEditor.oldLine,
       text,
       createdAt: new Date().toISOString(),
+      source: tab === 'session' ? 'session' : 'workspace',
     }
     setBusy(true)
     try {

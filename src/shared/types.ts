@@ -26,6 +26,8 @@ export interface DiffFile {
   diff: string
   /** True when the file looks binary (no usable diff). */
   binary: boolean
+  /** Worktree mtime (epoch ms), 0 when unreadable (used by the Last-turn scope). */
+  mtime: number
   /** Hunks of `diff` in order, each tagged with the git layer it belongs to. */
   hunks: DiffHunk[]
 }
@@ -163,6 +165,13 @@ export interface ReviewComment {
   text: string
   /** ISO 8601 timestamp. */
   createdAt: string
+  /**
+   * Which review tab created it: 'session' comments anchor to the session
+   * hunks' RELATIVE line counts (no real line numbers in the session log),
+   * 'workspace' comments anchor to real file lines. Used to route jumps to
+   * the right tab. Absent on comments written by older versions.
+   */
+  source?: 'session' | 'workspace'
 }
 
 /** GET {commentsPath}?cwd=… response. */
