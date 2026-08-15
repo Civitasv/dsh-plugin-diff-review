@@ -1516,6 +1516,24 @@ function commentMatches(comment: ReviewComment, oldLine: number | null, newLine:
   return true
 }
 
+/**
+ * A diff may repeat one source line in several hunks. Render each stored
+ * comment once, preferring the new-file side in split view; old-only anchors
+ * remain on the old-file side.
+ */
+function takeCommentMatches(comments: ReviewComment[] | undefined, oldLine: number | null, newLine: number | null, rendered: Set<string>, side?: 'old' | 'new'): ReviewComment[] {
+  return (comments ?? []).filter((comment) => {
+    const matches = side === 'new'
+      ? comment.lineNew !== null && comment.lineNew === newLine
+      : side === 'old'
+        ? comment.lineNew === null && comment.lineOld !== null && comment.lineOld === oldLine
+        : commentMatches(comment, oldLine, newLine)
+    if (!matches || rendered.has(comment.id)) return false
+    rendered.add(comment.id)
+    return true
+  })
+}
+
 /** Hover-to-comment affordance in the line-number gutter. Lines that already
  * have comments show a non-interactive count badge (the saved boxes below the
  * line are the view); the + only appears on comment-free lines to add one. */
@@ -1724,6 +1742,7 @@ function UnifiedDiff({
 }) {
   const blocks = parseGitBlocks(diff)
   let hunkIndex = 0
+  const renderedCommentIds = new Set<string>()
   const editingKey = commentEditor ? `${commentEditor.oldLine ?? 'o'}:${commentEditor.newLine ?? 'n'}` : null
   const findingsFor = (oldLine: number | null, newLine: number | null): ReviewFinding[] => {
     if (!path || !reviewFindings || reviewFindings.length === 0) return []
@@ -1748,7 +1767,7 @@ function UnifiedDiff({
               {isHunk
                 ? rows.map(({ row, oldLine, newLine }, ri) => {
                     const key = `${oldLine ?? 'o'}:${newLine ?? 'n'}`
-                    const rowComments = comments?.filter((c) => commentMatches(c, oldLine, newLine)) ?? []
+                    const rowComments = takeCommentMatches(comments, oldLine, newLine, renderedCommentIds)
                     const findings = findingsFor(oldLine, newLine)
                     const editing = editingKey === key
                     const showActions = row.kind === 'ctx' || row.kind === 'add' || row.kind === 'del'
@@ -3464,6 +3483,10 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const commitActiveText = commitActiveFile
     ? commitSegments.find((s) => s.path === commitActiveFile.path)?.text ?? commitDiff?.diff ?? ''
     : commitDiff?.diff ?? ''
+  // A line can appear in multiple diff hunks; each set keeps a comment box to
+  // one visual anchor for the current render.
+  const sessionRenderedCommentIds = new Set<string>()
+  const workspaceRenderedCommentIds = new Set<string>()
 
   const showReviewFileMenu = (event: ReactMouseEvent, path: string) => {
     event.preventDefault()
@@ -4128,8 +4151,8 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                                   const rightAnchor = { oldLine: row.kind === 'ctx' && row.rightNum !== null ? row.rightNum : null, newLine: row.rightNum }
                                   const leftKey = `${leftAnchor.oldLine ?? 'o'}:${leftAnchor.newLine ?? 'n'}`
                                   const rightKey = `${rightAnchor.oldLine ?? 'o'}:${rightAnchor.newLine ?? 'n'}`
-                                  const leftComments = comments.filter((c) => commentMatches(c, leftAnchor.oldLine, leftAnchor.newLine))
-                                  const rightComments = comments.filter((c) => commentMatches(c, rightAnchor.oldLine, rightAnchor.newLine))
+                                  const leftComments = takeCommentMatches(comments, leftAnchor.oldLine, leftAnchor.newLine, sessionRenderedCommentIds, 'old')
+                                  const rightComments = takeCommentMatches(comments, rightAnchor.oldLine, rightAnchor.newLine, sessionRenderedCommentIds, 'new')
                                   const commentBtn = (anchor: { oldLine: number | null; newLine: number | null }, count: number) => (
                                     <CommentLine
                                       count={count}
@@ -4191,7 +4214,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                           <pre className="dsdr-pre">
                             {sessionRowsWithLines(selectedChange).map(({ row, oldLine, newLine }, i) => {
                               const key = `${oldLine ?? 'o'}:${newLine ?? 'n'}`
-                              const rowComments = comments.filter((c) => commentMatches(c, oldLine, newLine))
+                              const rowComments = takeCommentMatches(comments, oldLine, newLine, sessionRenderedCommentIds)
                               const showActions = row.kind === 'ctx' || row.kind === 'add' || row.kind === 'del'
                               return (
                                 <Fragment key={i}>
@@ -4569,8 +4592,8 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                               const rightAnchor = { oldLine: row.kind === 'ctx' && row.rightNum !== null ? row.rightNum : null, newLine: row.rightNum }
                               const leftKey = `${leftAnchor.oldLine ?? 'o'}:${leftAnchor.newLine ?? 'n'}`
                               const rightKey = `${rightAnchor.oldLine ?? 'o'}:${rightAnchor.newLine ?? 'n'}`
-                              const leftComments = comments.filter((c) => commentMatches(c, leftAnchor.oldLine, leftAnchor.newLine))
-                              const rightComments = comments.filter((c) => commentMatches(c, rightAnchor.oldLine, rightAnchor.newLine))
+                              const leftComments = takeCommentMatches(comments, leftAnchor.oldLine, leftAnchor.newLine, workspaceRenderedCommentIds, 'old')
+                              const rightComments = takeCommentMatches(comments, rightAnchor.oldLine, rightAnchor.newLine, workspaceRenderedCommentIds, 'new')
                               const openBtn = (line: number) =>
                                 selectedFile.path ? (
                                   <button type="button" className="dsdr-split-openline" title={t('editor.openLine')} aria-label={t('editor.openLine')} onClick={() => void openFile(selectedFile.path, line)}>
