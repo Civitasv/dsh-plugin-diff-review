@@ -48,7 +48,8 @@
     "typecheck": "tsc --noEmit",
     "test:git": "node scripts/git-semantics-test.mjs",
     "test:session": "node scripts/session-extract-test.mjs",
-    "test:package": "node scripts/review-package-test.mjs"
+    "test:package": "node scripts/review-package-test.mjs",
+    "test:ui": "node scripts/ui-smoke-test.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
