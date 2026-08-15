@@ -50,6 +50,15 @@
     "test:package": "node scripts/review-package-test.mjs"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.12",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.8",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/schemastery": "^3.18.1",
     "diff": "^9.0.0"
@@ -62,13 +71,13 @@
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-layout": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
     "@types/diff": "^8.0.0",
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.1",
     "esbuild": "^0.25.0",
-    "typescript": "^5.6.0",
-    "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.1.0-rc.6"
+    "typescript": "^5.6.0"
   },
   "license": "MIT"
 }

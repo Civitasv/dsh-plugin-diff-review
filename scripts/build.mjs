@@ -41,8 +41,12 @@ await build({
   platform: 'browser',
   jsx: 'automatic',
   target: 'es2020',
+  minify: true,
   external: ['react', 'react/jsx-runtime', 'react-dom', 'react-dom/client', '@deepseek-ai/*'],
-  sourcemap: 'inline',
+  // Third-party editor sources make an inline browser source map several MB;
+  // ship the compact runtime bundle instead. The TypeScript source remains in
+  // the plugin repository for development and server builds keep their map.
+  sourcemap: false,
   logLevel: 'info',
 })
 

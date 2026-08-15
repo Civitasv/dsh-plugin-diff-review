@@ -22,6 +22,15 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, Fragment } from 'react'
 import type { CSSProperties, ReactElement, ReactNode } from 'react'
 import { diffLines } from 'diff'
+import { EditorState, type Extension } from '@codemirror/state'
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { css } from '@codemirror/lang-css'
+import { html } from '@codemirror/lang-html'
+import { javascript } from '@codemirror/lang-javascript'
+import { json } from '@codemirror/lang-json'
+import { markdown } from '@codemirror/lang-markdown'
+import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
 import type { ClientContext, ISessions, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -959,9 +968,7 @@ const REVIEW_CSS = `
 .dsdr-files-item:hover,.dsdr-files-item-active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsdr-files-menu{position:fixed;z-index:80;display:flex;min-width:180px;flex-direction:column;gap:2px;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-files-menu button{border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);padding:8px 10px;text-align:left;font:12px var(--dsw-font-sans);cursor:pointer}.dsdr-files-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsdr-files-editor{display:flex;min-width:0;flex-direction:column;background:var(--dsw-alias-bg-layer-1)}.dsdr-files-path{padding:10px 14px;color:var(--dsw-alias-label-secondary);font:12px/18px var(--dsw-font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform)}
-.dsdr-code-editor{display:flex;min-height:0;flex:1;background:var(--dsw-alias-bg-layer-1);overflow:hidden}.dsdr-code-lines{flex:none;width:56px;box-sizing:border-box;overflow:hidden;padding:14px 10px 14px 0;border-right:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-tertiary);font:12px/21px var(--dsw-font-mono);text-align:right;user-select:none;background:var(--dsw-alias-bg-module-platform)}.dsdr-code-lines-inner{will-change:transform}.dsdr-code-lines span{display:block;height:21px}
-.dsdr-code-layer{position:relative;min-width:0;min-height:0;flex:1;overflow:hidden}.dsdr-code-highlight,.dsdr-files-text{box-sizing:border-box;position:absolute;inset:0;margin:0;padding:14px 16px;border:0;font:13px/21px var(--dsw-font-mono);tab-size:2;white-space:pre}.dsdr-code-highlight{pointer-events:none;overflow:hidden;color:var(--dsw-alias-label-primary);background:transparent}.dsdr-code-highlight code{display:block;min-width:max-content}.dsdr-files-text{resize:none;overflow:scroll;background:transparent;color:transparent;caret-color:var(--dsw-alias-label-primary);outline:0;-webkit-text-fill-color:transparent}.dsdr-files-text::selection{background:rgba(91,140,255,.42)}
-.dsdr-code-keyword{color:#c586c0}.dsdr-code-string{color:#ce9178}.dsdr-code-comment{color:#6a9955}.dsdr-code-number{color:#b5cea8}.dsdr-code-plain{color:var(--dsw-alias-label-primary)}
+.dsdr-code-editor{min-height:0;flex:1;overflow:hidden;background:var(--dsw-alias-bg-layer-1)}.dsdr-cm-host{height:100%;min-height:0}.dsdr-cm-host .cm-editor{height:100%;background:var(--dsw-alias-bg-layer-1)}.dsdr-cm-host .cm-scroller{overflow:auto;font-family:var(--dsw-font-mono);line-height:21px}.dsdr-cm-host .cm-content{padding:14px 16px;min-height:100%;caret-color:var(--dsw-alias-label-primary)}.dsdr-cm-host .cm-gutters{border-right:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-tertiary);padding-top:14px}.dsdr-cm-host .cm-lineNumbers .cm-gutterElement{min-width:42px;padding:0 10px 0 8px}.dsdr-cm-host .cm-activeLine,.dsdr-cm-host .cm-activeLineGutter{background:color-mix(in srgb,var(--dsw-alias-interactive-bg-hover) 70%,transparent)}.dsdr-cm-host .cm-selectionBackground,.dsdr-cm-host ::selection{background:rgba(91,140,255,.42)!important}.dsdr-cm-host .cm-focused{outline:none}
 .dsdr-image-preview{display:flex;align-items:center;justify-content:center;min-height:0;flex:1;overflow:auto;padding:24px;background:var(--dsw-alias-bg-layer-1)}.dsdr-image-preview img{max-width:100%;max-height:100%;object-fit:contain;box-shadow:var(--dsw-shadow-lv2)}.dsdr-files-unavailable{display:flex;align-items:center;justify-content:center;min-height:0;flex:1;color:var(--dsw-alias-label-tertiary);font-size:13px}
 .dsdr-files-actions{display:flex;align-items:center;gap:6px;padding:8px 10px;border-top:1px solid var(--dsw-alias-border-l1)}
 /* --- fallback user bubble (native look) --- */
@@ -2096,12 +2103,67 @@ function TurnChangeSummary({ matched, sessionId, useSession, useSessions, t }: T
   )
 }
 
-function highlightCode(value: string): ReactNode[] {
-  const token = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\b(?:const|let|var|function|return|if|else|for|while|async|await|import|from|export|type|interface|class|new|true|false|null|undefined)\b|\b\d+(?:\.\d+)?\b)/g
-  return value.split(token).filter(Boolean).map((part, index) => {
-    const kind = part.startsWith('//') || part.startsWith('/*') ? 'comment' : part.startsWith('"') || part.startsWith("'") ? 'string' : /^\d/.test(part) ? 'number' : /^(const|let|var|function|return|if|else|for|while|async|await|import|from|export|type|interface|class|new|true|false|null|undefined)$/.test(part) ? 'keyword' : 'plain'
-    return <span className={'dsdr-code-' + kind} key={index}>{part}</span>
-  })
+function languageForPath(path: string): Extension {
+  const extension = path.slice(path.lastIndexOf('.')).toLowerCase()
+  if (['.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx'].includes(extension)) return javascript({ typescript: extension === '.ts' || extension === '.tsx', jsx: extension === '.tsx' || extension === '.jsx' })
+  if (extension === '.json') return json()
+  if (extension === '.css') return css()
+  if (['.html', '.htm', '.svg', '.xml'].includes(extension)) return html()
+  if (['.md', '.mdx'].includes(extension)) return markdown()
+  return []
+}
+
+const CODE_MIRROR_THEME = EditorView.theme({
+  '&': { height: '100%', fontSize: '13px', backgroundColor: 'var(--dsw-alias-bg-layer-1)', color: 'var(--dsw-alias-label-primary)' },
+  '.cm-content': { fontFamily: 'var(--dsw-font-mono)', tabSize: '2' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--dsw-alias-label-primary)' },
+}, { dark: true })
+
+function CodeEditor({ path, value, onChange }: { path: string; value: string; onChange: (value: string) => void }) {
+  const hostRef = useRef<HTMLDivElement>(null)
+  const viewRef = useRef<EditorView | null>(null)
+  const onChangeRef = useRef(onChange)
+  const language = useMemo(() => languageForPath(path), [path])
+
+  useEffect(() => { onChangeRef.current = onChange }, [onChange])
+  useEffect(() => {
+    if (!hostRef.current) return
+    const view = new EditorView({
+      parent: hostRef.current,
+      state: EditorState.create({
+        doc: value,
+        extensions: [
+          lineNumbers(),
+          history(),
+          drawSelection(),
+          highlightActiveLine(),
+          highlightActiveLineGutter(),
+          keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          language,
+          CODE_MIRROR_THEME,
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged) onChangeRef.current(update.state.doc.toString())
+          }),
+        ],
+      }),
+    })
+    viewRef.current = view
+    return () => {
+      viewRef.current = null
+      view.destroy()
+    }
+    // The path selects the syntax extension. Value changes are dispatched below
+    // so typing never recreates the editor or loses cursor/scroll state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language])
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || view.state.doc.toString() === value) return
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } })
+  }, [value])
+
+  return <div ref={hostRef} className="dsdr-cm-host" />
 }
 
 function FileTreeResizeHandle({ width, onResize }: { width: number; onResize: (width: number) => void }) {
@@ -2135,8 +2197,6 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat, t
   const [notice, setNotice] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ path: string; x: number; y: number } | null>(null)
   const savedContent = useRef('')
-  const codeRef = useRef<HTMLPreElement>(null)
-  const lineNumbersRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let alive = true
@@ -2199,11 +2259,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onAddToChat, t
           <div className="dsdr-files-path">{selected ?? (loading ? t('files.loading') : '')}</div>
           {selected && fileKind === 'text' ? (
             <div className="dsdr-code-editor">
-              <div className="dsdr-code-lines" aria-hidden="true"><div ref={lineNumbersRef} className="dsdr-code-lines-inner">{content.split('\n').map((_, index) => <span key={index}>{index + 1}</span>)}</div></div>
-              <div className="dsdr-code-layer">
-                <pre ref={codeRef} className="dsdr-code-highlight" aria-hidden="true"><code>{highlightCode(content)}</code></pre>
-                <textarea className="dsdr-files-text" wrap="off" value={content} onChange={(event) => setContent(event.target.value)} onScroll={(event) => { const { scrollTop, scrollLeft } = event.currentTarget; if (codeRef.current) { codeRef.current.scrollTop = scrollTop; codeRef.current.scrollLeft = scrollLeft }; if (lineNumbersRef.current) lineNumbersRef.current.style.transform = `translateY(${-scrollTop}px)` }} spellCheck={false} />
-              </div>
+              <CodeEditor path={selected} value={content} onChange={setContent} />
             </div>
           ) : null}
           {selected && fileKind === 'image' && imageUrl ? <div className="dsdr-image-preview"><img src={imageUrl} alt={selected} /></div> : null}
