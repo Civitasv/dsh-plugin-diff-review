@@ -49,6 +49,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { ApplyHunkResponse, ApplyResponse, CommentsResponse, CommitDiffResponse, CommitInfo, DiffFile, DiffHunk, FileReadResponse, FilesListResponse, FileWriteResponse, GitResponse, HistoryResponse, PrResponse, ReposResponse, ReviewComment, ReviewFinding, ReviewResponse, StatusResponse, WorkspaceFileEntry } from '../shared/types.ts'
+import { filesWorkspacePath } from './files-path.ts'
 import { parseReviewPackage, isReviewPackageText } from './review-package.ts'
 import type { ReviewPackage, ReviewPackageComment, ReviewPackageFinding } from './review-package.ts'
 
@@ -3764,9 +3765,14 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     if (!result.ok) setNotice({ kind: 'error', text: `${t('editor.failed')}: ${result.error ?? ''}` })
   }
   const openInFilesTab = (path: string) => {
-    setOpenFileTabs((previous) => previous.includes(path) ? previous : [...previous, path])
-    setFilesTarget(path)
-    setSurface(path)
+    const workspacePath = activeCwd ? filesWorkspacePath(activeCwd, path) : null
+    if (!workspacePath) {
+      setNotice({ kind: 'error', text: 'This file is outside the current workspace and cannot be opened in Files.' })
+      return
+    }
+    setOpenFileTabs((previous) => previous.includes(workspacePath) ? previous : [...previous, workspacePath])
+    setFilesTarget(workspacePath)
+    setSurface(workspacePath)
   }
   const openFilesBrowser = () => {
     setOpenFileTabs((previous) => previous.includes(FILES_BROWSER_TAB) ? previous : [...previous, FILES_BROWSER_TAB])
