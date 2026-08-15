@@ -2093,12 +2093,14 @@ function IconFile() {
 /** Codex-style review card for a carried review package message. */
 function ReviewPackageCard({ pkg, cwd, t }: { pkg: ReviewPackage; cwd?: string; t: CardT }) {
   const targetCwd = pkg.workspace ?? cwd ?? null
-  const jump = (path: string, line?: number) => {
+  const jump = (path: string, line?: number, source?: ReviewPackageComment['source']) => {
     if (!targetCwd) return
     overlayStore.update((d) => {
       d.open = true
       d.cwd = targetCwd
-      d.focus = { path, line }
+      // Session-sourced comments anchor to relative hunk lines and jump to
+      // the session tab; workspace comments jump to real file lines.
+      d.focus = { path, line, tab: source === 'session' ? 'session' : 'workspace' }
       d.key = d.key + 1
     })
   }
@@ -2127,7 +2129,7 @@ function ReviewPackageCard({ pkg, cwd, t }: { pkg: ReviewPackage; cwd?: string; 
               type="button"
               className="dsdr-review-card-item"
               title={t('review.cardJump')}
-              onClick={() => jump(c.path, c.line ?? undefined)}
+              onClick={() => jump(c.path, c.line ?? undefined, c.source)}
             >
               <span className="dsdr-review-card-loc">{c.line !== null ? `${c.path}:${c.line}` : `${c.path} (old)`}</span>
               <span className="dsdr-review-card-text">{c.text}</span>
@@ -2302,7 +2304,10 @@ function DiffReviewComposerDock({ sessionId, useSessions, sessions, t }: DiffRev
       lines.push(`## ${path}`)
       for (const c of list) {
         const anchor = c.lineNew !== null ? `:${c.lineNew}` : ` (old line ${c.lineOld})`
-        lines.push(`- ${path}${anchor}: ${c.text}`)
+        // Origin tab tag so the conversation card routes its jump ('s' =
+        // session relative hunk lines, 'w' = workspace real lines).
+        const tag = c.source === 'session' ? '[s]' : '[w]'
+        lines.push(`- ${tag} ${path}${anchor}: ${c.text}`)
       }
       const hunks = hunksForLines(pending.diffs[path] ?? '', list.map((c) => c.lineNew ?? c.lineOld))
       if (hunks) {
@@ -3147,7 +3152,10 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       lines.push(`## ${path}`)
       for (const c of list) {
         const anchor = c.lineNew !== null ? `:${c.lineNew}` : ` (old line ${c.lineOld})`
-        lines.push(`- ${path}${anchor}: ${c.text}`)
+        // Origin tab tag so the conversation card routes its jump ('s' =
+        // session relative hunk lines, 'w' = workspace real lines).
+        const tag = c.source === 'session' ? '[s]' : '[w]'
+        lines.push(`- ${tag} ${path}${anchor}: ${c.text}`)
       }
       lines.push('')
     }

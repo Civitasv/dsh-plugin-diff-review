@@ -18,6 +18,12 @@ export interface ReviewPackageComment {
   line: number | null
   /** Comment text. */
   text: string
+  /**
+   * Origin review tab, carried in the message as a `[s]`/`[w]` tag so the
+   * card can route its jump: 'session' anchors to relative hunk lines,
+   * 'workspace' to real file lines. Absent on older messages.
+   */
+  source?: 'session' | 'workspace'
 }
 
 export interface ReviewPackageFinding {
@@ -113,18 +119,25 @@ export function parseReviewPackage(text: string): ReviewPackage | null {
       continue
     }
     if (section !== null && t.startsWith('- ')) {
-      const body = t.slice(2).trim()
+      let body = t.slice(2).trim()
+      // Optional origin-tab tag (`- [s] path:…` / `- [w] path:…`).
+      let source: ReviewPackageComment['source']
+      const mTag = /^\[([sw])\]\s*(.+)$/.exec(body)
+      if (mTag) {
+        source = mTag[1] === 's' ? 'session' : 'workspace'
+        body = mTag[2].trim()
+      }
       const esc = escapeRegex(section)
       // `- <path>:<lineNew>: <text>`
       const mNew = new RegExp(`^${esc}:(\\d+):\\s*(.*)$`).exec(body)
       if (mNew) {
-        pkg.comments.push({ path: section, line: Number(mNew[1]), text: mNew[2] })
+        pkg.comments.push({ path: section, line: Number(mNew[1]), text: mNew[2], source })
         continue
       }
       // `- <path> (old line <lineOld>): <text>`
       const mOld = new RegExp(`^${esc} \\(old line (\\d+)\\):\\s*(.*)$`).exec(body)
       if (mOld) {
-        pkg.comments.push({ path: section, line: null, text: mOld[2] })
+        pkg.comments.push({ path: section, line: null, text: mOld[2], source })
       }
     }
   }

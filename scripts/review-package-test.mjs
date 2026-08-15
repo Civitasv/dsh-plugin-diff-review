@@ -53,7 +53,8 @@ try {
       lines.push(`## ${path}`)
       for (const c of list) {
         const anchor = c.lineNew !== null ? `:${c.lineNew}` : ` (old line ${c.lineOld})`
-        lines.push(`- ${path}${anchor}: ${c.text}`)
+        const tag = c.source === 'session' ? '[s]' : c.source === 'workspace' ? '[w]' : ''
+        lines.push(`- ${tag ? `${tag} ` : ''}${path}${anchor}: ${c.text}`)
       }
       lines.push('```diff')
       lines.push(`@@ -1,3 +1,4 @@`)
@@ -86,9 +87,9 @@ try {
   // 2. full package: comments + hunk + verdict + findings
   const full = compose({
     comments: [
-      { path: 'src/server/index.ts', lineNew: 411, lineOld: null, text: '这里 mtime 的 statSync 可以缓存' },
+      { path: 'src/server/index.ts', lineNew: 411, lineOld: null, text: '这里 mtime 的 statSync 可以缓存', source: 'session' },
       { path: 'src/server/index.ts', lineNew: 415, lineOld: null, text: '边界情况：max<=1 应返回 …' },
-      { path: 'src/client/index.tsx', lineNew: null, lineOld: 12, text: '删掉的行也值得一条评论' },
+      { path: 'src/client/index.tsx', lineNew: null, lineOld: 12, text: '删掉的行也值得一条评论', source: 'workspace' },
     ],
     verdict: 'incorrect',
     findings: [
@@ -102,8 +103,11 @@ try {
   check('full: verdict incorrect', p1?.verdict === 'incorrect')
   check('full: comment count', p1?.comments.length === 3)
   check('full: comment new-line anchor', p1?.comments[0].path === 'src/server/index.ts' && p1?.comments[0].line === 411 && p1?.comments[0].text === '这里 mtime 的 statSync 可以缓存')
+  check('full: comment source session', p1?.comments[0].source === 'session')
   check('full: comment with colon in text', p1?.comments[1].line === 415 && p1?.comments[1].text === '边界情况：max<=1 应返回 …')
+  check('full: comment source absent (legacy)', p1?.comments[1].source === undefined)
   check('full: old-line anchor', p1?.comments[2].line === null && p1?.comments[2].text === '删掉的行也值得一条评论')
+  check('full: comment source workspace', p1?.comments[2].source === 'workspace')
   check('full: findings count', p1?.findings.length === 2)
   check('full: finding fields', p1?.findings[0].priority === 'P1' && p1?.findings[0].file === 'src/server/index.ts' && p1?.findings[0].line === 411 && p1?.findings[0].title === '避免重复 statSync' && p1?.findings[0].detail === '把 mtime 缓存起来')
   check('full: finding with line range', p1?.findings[1].line === 12 && p1?.findings[1].title === '命名')
