@@ -8,21 +8,19 @@
 
 ### GitHub 安装
 
-DSH 的 `plugin add` 支持 pnpm 的 GitHub 依赖格式。推荐固定到发布 tag，避免后续
-`main` 的更新改变已安装版本：
+安装稳定版本时，将 `<tag>` 替换为要使用的发布版本：
 
 ```sh
 dsh plugin --profile web add github:Civitasv/dsh-plugin-diff-review#<tag>
 ```
 
-需要跟随最新版本时，改用：
+想直接使用最新版本：
 
 ```sh
 dsh plugin --profile web add github:Civitasv/dsh-plugin-diff-review#main
 ```
 
-`plugin add` 只负责将包安装到 web profile。首次安装还要在
-`~/.dsh/profiles/web/cordis.patch.yml` 增加：
+首次安装后，在 `~/.dsh/profiles/web/cordis.patch.yml` 添加：
 
 ```yaml
 - insert:
@@ -30,8 +28,7 @@ dsh plugin --profile web add github:Civitasv/dsh-plugin-diff-review#main
       name: dsh-plugin-diff-review
 ```
 
-随后重启 DSH。更新时重新执行同一条 `plugin add` 命令；使用 tag 时将版本替换为目标
-tag。
+重启 DSH 后即可使用。更新时重新执行安装命令；使用稳定版本时替换为新的 tag。
 
 ### 本地开发安装
 
