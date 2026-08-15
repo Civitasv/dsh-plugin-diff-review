@@ -690,6 +690,7 @@ const REVIEW_CSS = `
 .dsdr-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:32px}.dsdr-overlay-docked{justify-content:flex-end;padding:0;background:transparent;pointer-events:none}.dsdr-overlay-docked .dsdr-panel{pointer-events:auto}
 .dsdr-panel{box-sizing:border-box;position:relative;width:min(1120px,100%);height:min(720px,calc(100vh - 64px));max-width:calc(100vw - 64px);max-height:calc(100vh - 64px);background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;box-shadow:var(--dsw-shadow-lv3);display:flex;flex-direction:column;overflow:hidden}
 .dsdr-panel-docked{height:100vh!important;max-width:calc(100vw - 56px);max-height:none;border-width:0 0 0 1px;border-radius:0;box-shadow:var(--dsw-shadow-lv3)}.dsdr-panel-docked .dsdr-body{flex-direction:row-reverse}.dsdr-panel-docked .dsdr-files{border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-panel-docked .dsdr-file-tree-resize{margin-left:-2px;margin-right:-3px}.dsdr-panel-docked .dsdr-resize-e{left:-4px;right:auto;cursor:ew-resize}.dsdr-files-content-docked>.dsdr-files-list{grid-column:3;border-right:0;border-left:1px solid var(--dsw-alias-border-l1)}.dsdr-files-content-docked>.dsdr-file-tree-resize{grid-column:2}.dsdr-files-content-docked>.dsdr-files-editor{grid-column:1;grid-row:1}
+.dsdr-panel-tree-hidden .dsdr-body>.dsdr-files,.dsdr-panel-tree-hidden .dsdr-body>.dsdr-file-tree-resize,.dsdr-panel-tree-hidden .dsdr-files-content>.dsdr-files-list,.dsdr-panel-tree-hidden .dsdr-files-content>.dsdr-file-tree-resize{display:none}.dsdr-panel-tree-hidden .dsdr-files-content{grid-template-columns:minmax(0,1fr)!important}
 .dsdr-resize{position:absolute;z-index:5}
 .dsdr-resize-e{top:0;right:-3px;width:7px;height:100%;cursor:ew-resize}
 .dsdr-resize-s{bottom:-3px;left:0;width:100%;height:7px;cursor:ns-resize}
@@ -698,6 +699,7 @@ const REVIEW_CSS = `
 .dsdr-title{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary)}
 .dsdr-subtitle{color:var(--dsw-alias-label-tertiary);font-size:12px;font-family:var(--dsw-font-mono)}
 .dsdr-tabs{display:flex;gap:4px;margin-left:8px;min-width:0;overflow:auto}.dsdr-review-toolbar{display:flex;align-items:center;gap:10px;min-height:43px;padding:7px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);flex:none}
+.dsdr-review-tools{position:relative;display:inline-flex;align-items:center;gap:3px}.dsdr-jump-menu{position:absolute;z-index:20;right:0;top:calc(100% + 7px);display:flex;max-width:min(380px,calc(100vw - 40px));max-height:300px;overflow:auto;flex-direction:column;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-jump-menu button{min-width:210px;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-label-primary);padding:7px 9px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:11px/17px var(--dsw-font-mono);cursor:pointer}.dsdr-jump-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}.dsdr-jump-empty{padding:7px 9px;color:var(--dsw-alias-label-tertiary);font-size:12px}
 .dsdr-tab{box-sizing:border-box;min-height:26px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:2px 10px;font:inherit;font-size:12px;line-height:18px}
 .dsdr-tab:hover{color:var(--dsw-alias-label-secondary)}
 .dsdr-tab-active{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
@@ -2962,6 +2964,8 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   const [openFileTabs, setOpenFileTabs] = useState<string[]>([])
   const [filesTarget, setFilesTarget] = useState<string | null>(null)
   const [collapsedReviewFiles, setCollapsedReviewFiles] = useState<ReadonlySet<string>>(() => new Set())
+  const [fileTreeVisible, setFileTreeVisible] = useState(true)
+  const [jumpOpen, setJumpOpen] = useState(false)
   const [fileTreeWidth, setFileTreeWidth] = useState(() => {
     try {
       const stored = Number(localStorage.getItem('dsdr-file-tree-width'))
@@ -3285,6 +3289,24 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   if (!storeState.open || !cwd) return null
 
   const selectedFile = scopeFiles.find((f) => f.path === selected) ?? null
+  const jumpFiles = tab === 'session'
+    ? rounds.flatMap((round) => round.changes.map((change) => ({ path: change.path, round: round.round })))
+    : scopeFiles.map((file) => ({ path: file.path, round: null as number | null }))
+  const jumpToFile = (item: { path: string; round: number | null }) => {
+    setJumpOpen(false)
+    if (item.round !== null) {
+      setSelectedRound(item.round)
+      setSelectedPath(item.path)
+      return
+    }
+    setCollapsedReviewFiles((previous) => {
+      const next = new Set(previous)
+      next.delete(item.path)
+      return next
+    })
+    setSelected(item.path)
+  }
+  const collapseAllDiffs = () => setCollapsedReviewFiles(new Set(scopeFiles.map((file) => file.path)))
   const totalAdded = files.reduce((n, f) => n + f.added, 0)
   const totalDeleted = files.reduce((n, f) => n + f.deleted, 0)
 
@@ -3728,7 +3750,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       }}
     >
       <div
-        className={`dsdr-panel${docked ? ' dsdr-panel-docked' : ''}`}
+        className={`dsdr-panel${docked ? ' dsdr-panel-docked' : ''}${fileTreeVisible ? '' : ' dsdr-panel-tree-hidden'}`}
         role="dialog"
         aria-modal="true"
         aria-label={t('review.title')}
@@ -3805,6 +3827,14 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
             </span>
             <span className="dsdr-spacer" />
             {tab === 'workspace' && allowActions ? <button type="button" className="dsdr-btn" disabled={busy || (files.length === 0 && stagedCount === 0)} onClick={() => setCommitOpen(true)}>{t('review.commit')}</button> : null}
+            <span className="dsdr-review-tools">
+              <button type="button" className="dsdr-file-icon" title={fileTreeVisible ? 'Hide file tree' : 'Show file tree'} aria-label={fileTreeVisible ? 'Hide file tree' : 'Show file tree'} onClick={() => setFileTreeVisible((visible) => !visible)}>▥</button>
+              {tab === 'workspace' ? <button type="button" className="dsdr-file-icon" title="Collapse all diffs" aria-label="Collapse all diffs" onClick={collapseAllDiffs}>⇳</button> : null}
+              <button type="button" className="dsdr-file-icon" title="Jump to file" aria-label="Jump to file" onClick={() => setJumpOpen((open) => !open)}>⌕</button>
+              {jumpOpen ? <div className="dsdr-jump-menu" role="menu">
+                {jumpFiles.length === 0 ? <span className="dsdr-jump-empty">No files</span> : jumpFiles.map((item, index) => <button key={`${item.round ?? 'w'}:${item.path}:${index}`} type="button" role="menuitem" title={item.path} onClick={() => jumpToFile(item)}>{item.path}</button>)}
+              </div> : null}
+            </span>
           </div>
         ) : null}
         {surface !== 'review' ? (
