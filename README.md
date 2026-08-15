@@ -45,7 +45,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 ## 常见问题
 
 - **最后一轮没有文件**：终端命令直接修改的文件不会进入会话记录；请切换到未暂存或已暂存范围查看 Git 改动。
-- **在编辑器中打开失败**：安装并启用 `dsh-plugin-open-editor`，并确认目标编辑器可以从 PATH 启动。
+- **在编辑器中打开失败**：安装并启用 [dsh-plugin-open-editor](https://github.com/Civitasv/dsh-plugin-open-editor)，并确认目标编辑器可以从 PATH 启动。
 
 ## License
 
