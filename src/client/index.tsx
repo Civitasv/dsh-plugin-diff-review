@@ -22,6 +22,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, Fragment } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactElement, ReactNode } from 'react'
 import { diffLines } from 'diff'
+import { gitRowsWithLines } from './unified-rows.ts'
 import { EditorState, type Extension } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { css } from '@codemirror/lang-css'
@@ -825,9 +826,10 @@ const REVIEW_CSS = `
 .dsdr-diff-stats{font-size:11px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;flex:none}
 .dsdr-diff-scroll{flex:1;min-height:0;overflow:auto;display:flex}
 .dsdr-pre{margin:0;padding:8px 0;font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:var(--dsdr-diff-size, 12px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px);white-space:pre;min-width:100%;flex:1}
-.dsdr-line{display:flex;align-items:flex-start;gap:10px;min-width:100%;width:max-content;padding:0 16px;color:var(--dsw-alias-label-primary);position:relative}
-.dsdr-line-num{flex:none;position:relative;width:40px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);opacity:.75}
-.dsdr-line-text{flex:1;min-width:0;white-space:pre}
+.dsdr-line{display:grid;grid-template-columns:40px 40px minmax(0,1fr) auto;align-items:flex-start;min-width:100%;width:max-content;padding:0 16px;color:var(--dsw-alias-label-primary);position:relative}
+.dsdr-line-num{box-sizing:border-box;position:relative;min-height:calc(var(--dsdr-diff-size, 12px) + 6px);padding:0 8px 0 4px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);opacity:.82;font-variant-numeric:tabular-nums}
+.dsdr-line-num-new{border-right:1px solid color-mix(in srgb,var(--dsw-alias-border-l1) 75%,transparent)}
+.dsdr-line-text{min-width:0;padding-left:12px;white-space:pre}
 .dsdr-comment-add{position:absolute;left:0;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:16px;height:16px;border:0;border-radius:4px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:12px;line-height:1;padding:0;visibility:hidden}
 .dsdr-line:hover .dsdr-comment-add,.dsdr-comment-add:focus-visible{visibility:visible}
 .dsdr-comment-add:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
@@ -898,10 +900,11 @@ const REVIEW_CSS = `
 .dsdr-send-title{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}
 .dsdr-send-hint{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}
 .dsdr-send-input{box-sizing:border-box;width:100%;min-height:140px;max-height:320px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);padding:8px;font:inherit;font-size:12px;line-height:18px;resize:vertical;white-space:pre-wrap}
-.dsdr-line-add{background:rgba(46,160,67,.13)}
-.dsdr-line-del{background:rgba(248,81,73,.12)}
-.dsdr-line-hunk{background:var(--dsw-alias-fill-l2);color:var(--dsw-alias-label-tertiary)}
-.dsdr-line-file{color:var(--dsw-alias-label-tertiary)}
+.dsdr-line-add{background:rgba(46,160,67,.14);box-shadow:inset 3px 0 0 rgba(46,160,67,.72)}
+.dsdr-line-del{background:rgba(248,81,73,.13);box-shadow:inset 3px 0 0 rgba(248,81,73,.72)}
+.dsdr-line-hunk{background:color-mix(in srgb,var(--dsw-alias-fill-l2) 88%,var(--dsw-alias-bg-module-platform));color:var(--dsw-alias-label-tertiary);border-top:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1)}
+.dsdr-line-hunk .dsdr-line-text{font-size:11px}
+.dsdr-line-file{color:var(--dsw-alias-label-tertiary);font-size:11px}
 .dsdr-line-note{color:var(--dsw-alias-label-tertiary);font-style:italic}
 .dsdr-hunk-bar{display:flex;align-items:center;gap:5px;padding:4px 12px;border-top:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-fill-l2)}
 .dsdr-hunk-action{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:50%;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);font:18px/1 var(--dsw-font-sans);cursor:pointer}.dsdr-hunk-action:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.dsdr-hunk-action-stage:hover{color:var(--dsw-alias-state-success-primary)}.dsdr-hunk-action-revert:hover{color:var(--dsw-alias-status-danger)}.dsdr-hunk-action:disabled{cursor:default;opacity:.45}
@@ -934,15 +937,21 @@ const REVIEW_CSS = `
 .dsdr-view-btn:hover{color:var(--dsw-alias-label-secondary)}
 .dsdr-view-btn-active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsdr-split{min-width:100%}
-.dsdr-split-head{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:11px;line-height:18px;color:var(--dsw-alias-label-tertiary);padding:4px 8px;position:sticky;top:0;background:var(--dsw-alias-bg-module-platform)}
+.dsdr-split-head{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:11px;line-height:18px;color:var(--dsw-alias-label-tertiary);padding:4px 8px;position:sticky;top:0;z-index:2;background:var(--dsw-alias-bg-module-platform)}
+.dsdr-split-head div+div{border-left:2px solid var(--dsw-alias-border-l1);padding-left:8px}
 .dsdr-split-head div{display:flex;gap:8px}
-.dsdr-split-hunk{color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-fill-l2);font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:11px;line-height:18px;padding:2px 16px}
-.dsdr-split-row{position:relative;display:grid;grid-template-columns:1fr 1fr;font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:var(--dsdr-diff-size, 12px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px)}
-.dsdr-split-cell:hover .dsdr-comment-add,.dsdr-split-row:hover .dsdr-comment-add{visibility:visible}
-.dsdr-split-cell{display:flex;flex-wrap:wrap;gap:8px;padding:0 8px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
-.dsdr-split-cell>.dsdr-comment-editor{flex:0 0 100%;padding:6px 8px}
-.dsdr-split-num{flex:none;position:relative;width:42px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px)}
-.dsdr-split-text{flex:1;min-width:0}
+.dsdr-split-hunk{color:var(--dsw-alias-label-tertiary);background:color-mix(in srgb,var(--dsw-alias-fill-l2) 88%,var(--dsw-alias-bg-module-platform));border-top:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:11px;line-height:18px;padding:3px 16px}
+.dsdr-split-row{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:var(--dsdr-diff-size, 12px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px)}
+.dsdr-split-cell:hover .dsdr-comment-add{visibility:visible}
+.dsdr-split-cell{position:relative;display:flex;flex-wrap:wrap;gap:0;min-width:0;padding:0;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
+.dsdr-split-cell+.dsdr-split-cell{border-left:2px solid var(--dsw-alias-border-l1)}
+.dsdr-split-cell>.dsdr-comment-editor{box-sizing:border-box;flex:0 0 100%;min-width:0;padding:6px 8px}
+.dsdr-split-num{box-sizing:border-box;flex:none;width:42px;padding:0 8px 0 4px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px);font-variant-numeric:tabular-nums;background:color-mix(in srgb,var(--dsw-alias-fill-l2) 38%,transparent)}
+.dsdr-split-cell .dsdr-comment-add{top:0;transform:translateY(1px);left:30px;right:auto;z-index:4;width:22px;height:22px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-2);box-shadow:0 2px 7px rgba(0,0,0,.28);color:var(--dsw-alias-label-secondary);font-size:16px;font-weight:500;line-height:18px}
+.dsdr-split-cell .dsdr-comment-add:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary)}
+.dsdr-split-cell .dsdr-comment-has{background:color-mix(in srgb,var(--dsw-alias-button-info-fill) 22%,var(--dsw-alias-bg-layer-2));border-color:color-mix(in srgb,var(--dsw-alias-button-info-fill) 55%,var(--dsw-alias-border-l2));color:var(--dsw-alias-button-info-fill);font-size:10px}
+.dsdr-split-cell:has(.dsdr-comment-editor-draft) .dsdr-comment-add{display:none}
+.dsdr-split-text{flex:1;min-width:0;padding:0 8px}
 .dsdr-cell-finding{box-shadow:inset 0 0 0 1px var(--dsdr-finding-color, rgba(255,166,87,.7));background:rgba(255,166,87,.08)}
 .dsdr-cell-jump{background:rgba(88,166,255,.16)}
 .dsdr-split-finding{flex:none;font-size:9px;line-height:12px;border-radius:3px;padding:0 3px;font-family:var(--dsw-font-mono);font-weight:600;align-self:flex-start}
@@ -953,8 +962,10 @@ const REVIEW_CSS = `
 .dsdr-split-openline{flex:none;display:flex;align-items:center;justify-content:center;width:16px;height:16px;border:0;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:11px;line-height:1;padding:0;visibility:hidden}
 .dsdr-split-cell:hover .dsdr-split-openline,.dsdr-split-openline:focus-visible{visibility:visible}
 .dsdr-split-openline:hover{color:var(--dsw-alias-label-primary)}
-.dsdr-cell-add{background:rgba(46,160,67,.13)}
-.dsdr-cell-del{background:rgba(248,81,73,.12)}
+.dsdr-cell-add{background:rgba(46,160,67,.14);box-shadow:inset 3px 0 0 rgba(46,160,67,.72)}
+.dsdr-cell-del{background:rgba(248,81,73,.13);box-shadow:inset 3px 0 0 rgba(248,81,73,.72)}
+.dsdr-cell-add .dsdr-split-num{background:rgba(46,160,67,.22)}
+.dsdr-cell-del .dsdr-split-num{background:rgba(248,81,73,.21)}
 .dsdr-cell-dim{background:var(--dsw-alias-fill-l1, rgba(128,128,128,.05))}
 /* --- conversation review card (Codex-style) --- */
 .dsdr-review-card{display:flex;flex-direction:column;gap:2px;max-width:min(720px,100%);background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l1);border-radius:16px;box-shadow:var(--dsw-shadow-lv2);overflow:hidden;margin:2px 0}
@@ -1572,6 +1583,19 @@ function CommentLine({ count, onOpen, t }: { count: number; onOpen: () => void; 
   )
 }
 
+/** Shared Codex-style unified row: separate old/new gutters make additions
+ * and deletions scannable in every single-column diff surface. */
+function UnifiedDiffLine({ row, oldLine = null, newLine = null, className = '', gutter, trailing, dataLine }: { row: DiffRow; oldLine?: number | null; newLine?: number | null; className?: string; gutter?: ReactNode; trailing?: ReactNode; dataLine?: number }) {
+  return (
+    <div className={`dsdr-line dsdr-line-${row.kind}${className}`} data-dsdr-line={dataLine}>
+      <span className="dsdr-line-num">{oldLine ?? ''}</span>
+      <span className="dsdr-line-num dsdr-line-num-new">{newLine ?? ''}{gutter}</span>
+      <span className="dsdr-line-text">{row.text || ' '}</span>
+      {trailing}
+    </div>
+  )
+}
+
 /** The inline comment editor, rendered as its own row. */
 function CommentEditor({
   text,
@@ -1589,7 +1613,7 @@ function CommentEditor({
   t: (key: keyof typeof zh, params?: Record<string, unknown>) => string
 }) {
   return (
-    <div className="dsdr-comment-editor">
+    <div className="dsdr-comment-editor dsdr-comment-editor-draft">
       <textarea
         className="dsdr-comment-input"
         value={text}
@@ -1783,7 +1807,7 @@ function UnifiedDiff({
           return (
             <Fragment key={bi}>
               {isHunk && !readOnly ? <HunkToolbar hunk={hunk} busy={busy} onAction={onHunkAction} t={t} /> : null}
-              {block.head ? <div className={`dsdr-line dsdr-line-${block.head.kind}`}>{block.head.text || ' '}</div> : null}
+              {block.head ? <UnifiedDiffLine row={block.head} /> : null}
               {isHunk
                 ? rows.map(({ row, oldLine, newLine }, ri) => {
                     const key = `${oldLine ?? 'o'}:${newLine ?? 'n'}`
@@ -1795,39 +1819,15 @@ function UnifiedDiff({
                     const jumped = jumpLine != null && (newLine === jumpLine || (newLine === null && oldLine === jumpLine))
                     return (
                       <Fragment key={ri}>
-                        <div
-                          className={`dsdr-line dsdr-line-${row.kind}${rowComments.length > 0 ? ' dsdr-line-commented' : ''}${findingCls}${jumped ? ' dsdr-line-jump' : ''}`}
-                          data-dsdr-line={newLine ?? oldLine ?? undefined}
-                        >
-                          <span className="dsdr-line-num">
-                            {newLine ?? oldLine ?? ''}
-                            {showActions ? (
-                              <CommentLine count={rowComments.length} onOpen={() => onOpenComment?.(oldLine, newLine)} t={t} />
-                            ) : null}
-                          </span>
-                          <span className="dsdr-line-text">{row.text || ' '}</span>
-                          {showActions ? (
-                            <>
-                              {findings.length > 0 ? (
-                                <span className={`dsdr-finding-tag dsdr-finding-${findings[0].priority}`} title={findings[0].title}>
-                                  {findings[0].priority}
-                                  {findings.length > 1 ? `×${findings.length}` : ''}
-                                </span>
-                              ) : null}
-                              {path && onOpenLine && (newLine ?? oldLine) ? (
-                                <button
-                                  type="button"
-                                  className="dsdr-openline"
-                                  title={t('editor.openLine')}
-                                  aria-label={t('editor.openLine')}
-                                  onClick={() => onOpenLine(path, newLine ?? oldLine ?? 1)}
-                                >
-                                  ↗
-                                </button>
-                              ) : null}
-                            </>
-                          ) : null}
-                        </div>
+                        <UnifiedDiffLine
+                          row={row}
+                          oldLine={oldLine}
+                          newLine={newLine}
+                          className={`${rowComments.length > 0 ? ' dsdr-line-commented' : ''}${findingCls}${jumped ? ' dsdr-line-jump' : ''}`}
+                          dataLine={newLine ?? oldLine ?? undefined}
+                          gutter={showActions ? <CommentLine count={rowComments.length} onOpen={() => onOpenComment?.(oldLine, newLine)} t={t} /> : null}
+                          trailing={showActions ? <>{findings.length > 0 ? <span className={`dsdr-finding-tag dsdr-finding-${findings[0].priority}`} title={findings[0].title}>{findings[0].priority}{findings.length > 1 ? `×${findings.length}` : ''}</span> : null}{path && onOpenLine && (newLine ?? oldLine) ? <button type="button" className="dsdr-openline" title={t('editor.openLine')} aria-label={t('editor.openLine')} onClick={() => onOpenLine(path, newLine ?? oldLine ?? 1)}>↗</button> : null}</> : null}
+                        />
                         {showActions && rowComments.length > 0 ? (
                           rowComments.map((comment) => (
                             <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={onUpdateComment ?? (async () => false)} onDelete={onDeleteComment ?? (() => {})} t={t} />
@@ -1842,9 +1842,7 @@ function UnifiedDiff({
                       </Fragment>
                     )
                   })
-                : block.rows.map((row, ri) => (
-                    <div key={ri} className={`dsdr-line dsdr-line-${row.kind}`}>{row.text || ' '}</div>
-                  ))}
+                : block.rows.map((row, ri) => <UnifiedDiffLine key={ri} row={row} />)}
             </Fragment>
           )
         })}
@@ -4287,18 +4285,15 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                               const showActions = row.kind === 'ctx' || row.kind === 'add' || row.kind === 'del'
                               return (
                                 <Fragment key={i}>
-                                  <div className={`dsdr-line dsdr-line-${row.kind}${rowComments.length > 0 ? ' dsdr-line-commented' : ''}`} data-dsdr-line={newLine ?? oldLine ?? undefined}>
-                                    <span className="dsdr-line-num">
-                                      {newLine ?? oldLine ?? ''}
-                                      {showActions ? <CommentLine count={rowComments.length} onOpen={() => openComment(oldLine, newLine)} t={t} /> : null}
-                                    </span>
-                                    <span className="dsdr-line-text">{row.text || ' '}</span>
-                                    {showActions && (newLine ?? oldLine) ? (
-                                      <button type="button" className="dsdr-openline" title={t('editor.openLine')} aria-label={t('editor.openLine')} onClick={() => void openFile(selectedChange.path, newLine ?? oldLine ?? 1)}>
-                                        ↗
-                                      </button>
-                                    ) : null}
-                                  </div>
+                                  <UnifiedDiffLine
+                                    row={row}
+                                    oldLine={oldLine}
+                                    newLine={newLine}
+                                    className={rowComments.length > 0 ? ' dsdr-line-commented' : ''}
+                                    dataLine={newLine ?? oldLine ?? undefined}
+                                    gutter={showActions ? <CommentLine count={rowComments.length} onOpen={() => openComment(oldLine, newLine)} t={t} /> : null}
+                                    trailing={showActions && (newLine ?? oldLine) ? <button type="button" className="dsdr-openline" title={t('editor.openLine')} aria-label={t('editor.openLine')} onClick={() => void openFile(selectedChange.path, newLine ?? oldLine ?? 1)}>↗</button> : null}
+                                  />
                                   {showActions && rowComments.length > 0 ? (
                                     rowComments.map((comment) => <CommentBox key={comment.id} comment={comment} busy={busy} onUpdate={updateComment} onDelete={(id) => void deleteComment(id)} t={t} />)
                                   ) : null}
@@ -4593,8 +4588,8 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                     ) : (
                       <div className="dsdr-diff-scroll">
                         <pre className="dsdr-pre">
-                          {gitDiffRows(commitActiveText).map((row, i) => (
-                            <div key={i} className={`dsdr-line dsdr-line-${row.kind}`}>{row.text || ' '}</div>
+                          {gitRowsWithLines(commitActiveText).map(({ row, oldLine, newLine }, i) => (
+                            <UnifiedDiffLine key={i} row={row} oldLine={oldLine} newLine={newLine} />
                           ))}
                         </pre>
                       </div>
