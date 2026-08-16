@@ -57,6 +57,7 @@
     "test:commit-scope-stats": "node scripts/commit-scope-stats-test.mjs",
     "test:readonly-scope-actions": "node scripts/readonly-scope-actions-test.mjs",
     "test:comment-navigation": "node scripts/comment-navigation-test.mjs",
+    "test:nonrepo-last-turn": "node scripts/nonrepo-last-turn-test.mjs",
     "test:ui": "node scripts/ui-smoke-test.mjs"
   },
   "dependencies": {

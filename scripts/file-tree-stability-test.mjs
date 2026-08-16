@@ -8,7 +8,12 @@ const lastTurnUsesStableTree = /const lastTurnTree = usePathStableTree\(lastTurn
 const memoizesStableTree = /const StableFileTreeView = memo\(FileTreeView/.test(source)
   && /prev\.nodes === next\.nodes[\s\S]*?prev\.activePath === next\.activePath/.test(source)
 const lastTurnTracksSelection = /scope === 'last-turn' \? \([\s\S]*?<StableFileTreeView[\s\S]*?activePath=\{selected\}/.test(source)
+// Files tab: same fix as the Last-turn tree — the workspace file list is
+// cached by path signature and rendered through the memoized tree view, so
+// streaming re-renders of the overlay do not recycle react-arborist rows.
+const filesUsesStableTree = /const tree = usePathStableTree\(shown, \(file\) => file\.path\)/.test(source)
+  && /<StableFileTreeView\s+nodes=\{tree\}\s+collapsed=\{collapsed\}\s+onToggleDir=\{onToggleDir\}\s+depth=\{0\}\s+fillHeight\s+activePath=\{selected\}/.test(source)
 
-const correct = keepsTreeForSamePaths && lastTurnUsesStableTree && memoizesStableTree && lastTurnTracksSelection
-console.log(`${correct ? 'PASS' : 'FAIL'}  streaming updates preserve the Last Turn file-tree DOM when paths are unchanged`)
+const correct = keepsTreeForSamePaths && lastTurnUsesStableTree && memoizesStableTree && lastTurnTracksSelection && filesUsesStableTree
+console.log(`${correct ? 'PASS' : 'FAIL'}  streaming updates preserve the Last Turn and Files file-tree DOM when paths are unchanged`)
 process.exitCode = correct ? 0 : 1

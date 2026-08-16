@@ -1055,7 +1055,7 @@ const zh = {
   'review.branch': '分支',
   'review.detached': '游离 HEAD',
   'review.notRepo': '当前目录不是 git 仓库',
-  'review.notRepoHint': '「会话更改」页签不受影响，仍可查看每轮修改。',
+  'review.notRepoHint': '当前目录不是 git 仓库；「最后一轮」范围与「会话更改」页签仍可查看会话中的修改。',
   'review.noSessionChanges': '这个会话还没有文件修改记录',
   'review.sessionScan': '已扫描 {results} 个工具结果：{diff} 个携带 diff、{path} 个仅有路径——终端命令（bash）改文件不会计入会话记录。',
   'review.goWorkspace': '查看工作区改动',
@@ -1130,7 +1130,7 @@ const zh = {
   'scope.commit': '提交',
   'scope.branch': '分支',
   'scope.last-turn': '最后一轮',
-  'review.lastTurnEmpty': '最后一轮没有记录到文件修改 —— 终端命令（bash）改文件不会计入会话记录；可切到「未暂存」或「已暂存」查看 git 变更',
+  'review.lastTurnEmpty': '最后一轮没有记录到文件修改 —— 终端命令（bash）改文件不会计入会话记录；可切到「未暂存」或「已暂存」查看 git 变更，或到「会话更改」页签查看每轮修改',
   'tool.files': '文件树',
   'tool.hideFiles': '隐藏文件树',
   'tool.collapse': '折叠 diff',
@@ -1215,7 +1215,7 @@ const en: Record<keyof typeof zh, string> = {
   'review.branch': 'branch',
   'review.detached': 'detached HEAD',
   'review.notRepo': 'This directory is not a git repository',
-  'review.notRepoHint': 'The "Session" tab still shows every round\'s changes.',
+  'review.notRepoHint': 'This directory is not a git repository; the "Last turn" scope and the "Session" tab still show conversation changes.',
   'review.noSessionChanges': 'No file changes recorded in this session yet',
   'review.sessionScan': 'Scanned {results} tool results: {diff} with diffs, {path} path-only — terminal (bash) edits are not tracked in the session log.',
   'review.goWorkspace': 'View workspace changes',
@@ -1290,7 +1290,7 @@ const en: Record<keyof typeof zh, string> = {
   'scope.commit': 'Commit',
   'scope.branch': 'Branch',
   'scope.last-turn': 'Last turn',
-  'review.lastTurnEmpty': 'No file changes recorded for the last turn — terminal commands (bash) that edit files are not tracked in the session log; switch to "Unstaged" or "Staged" to see git changes',
+  'review.lastTurnEmpty': 'No file changes recorded for the last turn — terminal commands (bash) that edit files are not tracked in the session log; switch to "Unstaged" or "Staged" to see git changes, or open the "Session" tab to browse every round',
   'tool.files': 'Files',
   'tool.hideFiles': 'Hide files',
   'tool.collapse': 'Collapse diffs',
@@ -2132,11 +2132,14 @@ function ThemeSelect({
 }
 
 /** Scope picker with Codex-style nested revision selection for committed diffs. */
-function ReviewScopeSelect({ scope, history, t, onSelectScope, onSelectCommit }: { scope: WorkspaceScope; history: CommitInfo[]; t: CardT; onSelectScope: (scope: WorkspaceScope) => void; onSelectCommit: (commit: CommitInfo) => void }) {
+function ReviewScopeSelect({ scope, history, t, gitAvailable, onSelectScope, onSelectCommit }: { scope: WorkspaceScope; history: CommitInfo[]; t: CardT; gitAvailable: boolean; onSelectScope: (scope: WorkspaceScope) => void; onSelectCommit: (commit: CommitInfo) => void }) {
   const [open, setOpen] = useState(false)
   const [commitOpen, setCommitOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
-  const current = SCOPE_OPTIONS.find((option) => option.id === scope)
+  // Outside a git repository the git-backed scopes (Unstaged/Staged/Commit/
+  // Branch) have nothing to show; Last turn is the only meaningful scope.
+  const options = gitAvailable ? SCOPE_OPTIONS : SCOPE_OPTIONS.filter((option) => option.id === 'last-turn')
+  const current = options.find((option) => option.id === scope)
 
   useEffect(() => {
     if (!open) return
@@ -2162,7 +2165,7 @@ function ReviewScopeSelect({ scope, history, t, onSelectScope, onSelectCommit }:
       </button>
       {open ? (
         <ul className="dsdr-sel-menu" role="listbox" aria-label={t('scope.label')}>
-          {SCOPE_OPTIONS.map((option) => option.id === 'commit' ? (
+          {options.map((option) => option.id === 'commit' ? (
             <li key={option.id} role="none" onPointerEnter={() => setCommitOpen(true)} onPointerLeave={() => setCommitOpen(false)}>
               <button type="button" role="option" aria-selected={scope === option.id} className={`dsdr-sel-option${scope === option.id ? ' dsdr-sel-option-active' : ''}`} onClick={() => setCommitOpen((value) => !value)}>
                 <span className="dsdr-sel-option-mark">{scope === option.id ? <IconCheck /> : null}</span>
@@ -2394,7 +2397,11 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onActivateFile
   }, [cwd])
 
   const shown = useMemo(() => files.filter((file) => file.path.toLowerCase().includes(filter.trim().toLowerCase())), [files, filter])
-  const tree = useMemo(() => buildFileTree(shown, (file) => file.path), [shown])
+  // Same treatment as the Last-turn tree: the overlay re-renders on every
+  // streamed token, and rebuilding the tree each time makes react-arborist
+  // recycle rows (flicker). Cache by path signature so node identity stays
+  // stable while the workspace file list is unchanged.
+  const tree = usePathStableTree(shown, (file) => file.path)
   const open = async (path: string) => {
     setSelected(path); setLoading(true); setNotice(null)
     try {
@@ -2448,7 +2455,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onActivateFile
         <div className="dsdr-files-list">
           <div className="dsdr-files-tree-toolbar"><input className="dsdr-files-search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={t('files.search')} autoFocus /></div>
           <div className="dsdr-files-tree-body">
-            <FileTreeView
+            <StableFileTreeView
               nodes={tree}
               collapsed={collapsed}
               onToggleDir={onToggleDir}
@@ -3525,6 +3532,13 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     }
   }, [scope, activeCwd, branches, baseBranch, status?.branch])
 
+  // Outside a git repository the git-backed scopes (Unstaged/Staged/Commit/
+  // Branch) have nothing to show; fall back to Last turn, which is client-side
+  // session data and does not need git (Codex-style).
+  useEffect(() => {
+    if (status && !status.isRepo && scope !== 'last-turn') setScope('last-turn')
+  }, [status, scope])
+
   useEffect(() => {
     if (scope !== 'branch' || !activeCwd || !baseBranch) {
       setBaseStatus(null)
@@ -4180,11 +4194,11 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
         {reviewFileMenu ? <div className="dsdr-files-menu dsdr-review-file-menu" role="menu" style={{ left: reviewFileMenu.x, top: reviewFileMenu.y }}><button type="button" role="menuitem" onClick={() => { void openFile(reviewFileMenu.path); setReviewFileMenu(null) }}><span className="dsdr-files-menu-icon">↗</span>Open in editor</button><button type="button" role="menuitem" onClick={() => { void writeClipboard(reviewFileMenu.path); setReviewFileMenu(null) }}><span className="dsdr-files-menu-icon">⧉</span>Copy path</button><button type="button" role="menuitem" onClick={() => { addFileToChat(reviewFileMenu.path); setReviewFileMenu(null) }}><span className="dsdr-files-menu-icon">+</span>Add to chat</button></div> : null}
         {surface === 'review' ? (
           <div className="dsdr-review-toolbar">
-            {tab === 'workspace' && status?.isRepo ? (
+            {tab === 'workspace' ? (
               <span className="dsdr-scope">
-                {repos.length > 1 ? <ThemeSelect ariaLabel={t('repo.label')} value={repoPath ?? activeCwd ?? ''} options={repos.map((r) => ({ value: r.path, label: `${baseName(r.path)}${r.branch ? ` (${r.branch})` : ''}` }))} onChange={(v) => { setRepoPath(v); setSelected(null); setReview(null) }} /> : null}
-                <ReviewScopeSelect scope={scope} history={history} t={t} onSelectScope={(nextScope) => { setScope(nextScope); setSelected(null); setSelectedCommit(null); setSelectedCommitFile(null); setCommitDiff(null) }} onSelectCommit={(commit) => { setScope('commit'); selectCommit(commit) }} />
-                {scope === 'branch' ? <ThemeSelect ariaLabel={t('scope.base')} value={baseBranch ?? ''} options={branches.map((b) => ({ value: b, label: b }))} onChange={setBaseBranch} /> : null}
+                {status?.isRepo && repos.length > 1 ? <ThemeSelect ariaLabel={t('repo.label')} value={repoPath ?? activeCwd ?? ''} options={repos.map((r) => ({ value: r.path, label: `${baseName(r.path)}${r.branch ? ` (${r.branch})` : ''}` }))} onChange={(v) => { setRepoPath(v); setSelected(null); setReview(null) }} /> : null}
+                <ReviewScopeSelect scope={scope} history={history} t={t} gitAvailable={status?.isRepo === true} onSelectScope={(nextScope) => { setScope(nextScope); setSelected(null); setSelectedCommit(null); setSelectedCommitFile(null); setCommitDiff(null) }} onSelectCommit={(commit) => { setScope('commit'); selectCommit(commit) }} />
+                {status?.isRepo && scope === 'branch' ? <ThemeSelect ariaLabel={t('scope.base')} value={baseBranch ?? ''} options={branches.map((b) => ({ value: b, label: b }))} onChange={setBaseBranch} /> : null}
               </span>
             ) : null}
             <DiffViewToggle view={view} onChange={setView} t={t} />
@@ -4196,7 +4210,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                   : t('review.notRepo')}
             </span>
             <span className="dsdr-spacer" />
-            {tab === 'workspace' ? <button type="button" className="dsdr-btn" disabled={busy || (files.length === 0 && stagedCount === 0)} onClick={() => setCommitOpen(true)}>{t('review.commit')}</button> : null}
+            {tab === 'workspace' && status?.isRepo ? <button type="button" className="dsdr-btn" disabled={busy || (files.length === 0 && stagedCount === 0)} onClick={() => setCommitOpen(true)}>{t('review.commit')}</button> : null}
             <span className="dsdr-review-tools">
               <button type="button" className="dsdr-btn dsdr-review-tool" title={t(fileTreeVisible ? 'tool.hideFiles' : 'tool.files')} aria-label={t(fileTreeVisible ? 'tool.hideFiles' : 'tool.files')} onClick={() => setFileTreeVisible((visible) => !visible)}><IconFileTree /><span className="dsdr-review-tool-label">{t('tool.files')}</span></button>
               {tab === 'workspace' ? <button type="button" className="dsdr-btn dsdr-review-tool" title={t('tool.collapse')} aria-label={t('tool.collapse')} onClick={collapseAllDiffs}><IconCollapseDiffs /><span className="dsdr-review-tool-label">{t('tool.collapse')}</span></button> : null}
@@ -4424,12 +4438,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               </div>
             </div>
           )
-        ) : error && !status?.isRepo ? (
-          <div className="dsdr-empty">
-            {error}
-            <div>{t('review.notRepoHint')}</div>
-          </div>
-        ) : status?.isRepo ? (
+        ) : status !== null && (status.isRepo || scope === 'last-turn') ? (
           <div className="dsdr-body">
             <div className="dsdr-files" style={{ width: fileTreeWidth }} role="listbox" aria-label={t('tab.workspace')}>
               {scope === 'all' ? (
