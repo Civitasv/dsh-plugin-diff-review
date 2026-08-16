@@ -49,6 +49,8 @@
     "test:session": "node scripts/session-extract-test.mjs",
     "test:package": "node scripts/review-package-test.mjs",
     "test:files-path": "node scripts/files-path-test.mjs",
+    "test:file-tree-layout": "node scripts/file-tree-layout-test.mjs",
+    "test:diff-line-layout": "node scripts/diff-line-layout-test.mjs",
     "test:ui": "node scripts/ui-smoke-test.mjs"
   },
   "dependencies": {

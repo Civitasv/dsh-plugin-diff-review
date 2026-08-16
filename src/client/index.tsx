@@ -704,6 +704,7 @@ function changeSplitBlocks(change: RoundChange): SplitBlock[] {
 // ---------------------------------------------------------------------------
 
 const FILE_TREE_RESIZE_HIT_AREA_PX = 12
+const FILE_TREE_ROW_HEIGHT_PX = 38
 
 const REVIEW_CSS = `
 .dsdr-trigger{min-height:28px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:0;border-radius:6px;align-items:center;gap:4px;padding:3px 6px;font:inherit;font-size:12px;line-height:18px;display:inline-flex}
@@ -824,7 +825,7 @@ const REVIEW_CSS = `
 .dsdr-diff-stats{font-size:11px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;flex:none}
 .dsdr-diff-scroll{flex:1;min-height:0;overflow:auto;display:flex}
 .dsdr-pre{margin:0;padding:8px 0;font-family:var(--dsdr-diff-font, var(--dsw-font-mono));font-size:var(--dsdr-diff-size, 12px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px);white-space:pre;min-width:100%;flex:1}
-.dsdr-line{display:flex;align-items:flex-start;gap:10px;padding:0 16px;color:var(--dsw-alias-label-primary);position:relative}
+.dsdr-line{display:flex;align-items:flex-start;gap:10px;min-width:100%;width:max-content;padding:0 16px;color:var(--dsw-alias-label-primary);position:relative}
 .dsdr-line-num{flex:none;position:relative;width:40px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);opacity:.75}
 .dsdr-line-text{flex:1;min-width:0;white-space:pre}
 .dsdr-comment-add{position:absolute;left:0;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:16px;height:16px;border:0;border-radius:4px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:12px;line-height:1;padding:0;visibility:hidden}
@@ -2571,7 +2572,7 @@ function FileTreeView<T>(props: {
     return () => cancelAnimationFrame(frame)
   }, [activePath, nodes])
 
-  const height = fillHeight ? Math.max(1, hostHeight) : Math.max(30, Math.min(420, flatCount * 29 + 8))
+  const height = fillHeight ? Math.max(1, hostHeight) : Math.max(30, Math.min(420, flatCount * FILE_TREE_ROW_HEIGHT_PX + 8))
   return (
     <div ref={hostRef} className={`dsdr-arborist${fillHeight ? ' dsdr-arborist-fill' : ''}`}>
       {(!fillHeight || hostHeight > 0) ? (
@@ -2581,7 +2582,7 @@ function FileTreeView<T>(props: {
           data={nodes}
           width="100%"
           height={height}
-          rowHeight={38}
+          rowHeight={FILE_TREE_ROW_HEIGHT_PX}
           indent={14}
           paddingTop={4}
           paddingBottom={4}
