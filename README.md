@@ -4,6 +4,8 @@
 
 ![评审工作台](docs/screenshots/showcase.png)
 
+> 中文文档：本文件 · English docs: [README.en.md](README.en.md)
+
 ## 安装
 
 本插件依赖 [dsh-plugin-open-editor](https://github.com/Civitasv/dsh-plugin-open-editor)，请一并安装：

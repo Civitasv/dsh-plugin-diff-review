@@ -20,6 +20,7 @@
     "dist",
     "client.js",
     "README.md",
+    "README.en.md",
     "LICENSE",
     "docs",
     "install.sh",
