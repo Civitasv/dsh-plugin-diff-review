@@ -9,9 +9,10 @@ const restoresScope = /const commentScope = focus\.scope \?\? \(focus\.tab === '
   && /setScope\(commentScope\)/.test(source)
 const resolvesLastTurnPath = /const lastTurnPath = lastTurnFiles\.find\(\(file\) => file\.path === focus\.path \|\| repoRelativePath\(file\.path, activeCwd\) === focus\.path\)\?\.path \?\? focus\.path/.test(source)
   && /setSelected\(lastTurnPath\)/.test(source)
+const preservesLastTurnSelection = /next\.files\.some\(\(file\) => file\.path === prev\) \|\| lastTurnFiles\.some\(\(file\) => file\.path === prev\)/.test(source)
 const renderedScroll = /const target = document\.querySelector\(`\[data-dsdr-line="\$\{jumpLine\}"\]`\)/.test(source)
 const noScopeInference = !/pendingWorkspaceFocus|isLastTurnTarget/.test(source)
 
-const correct = explicitScopeKeys && storesScope && restoresScope && resolvesLastTurnPath && renderedScroll && noScopeInference
+const correct = explicitScopeKeys && storesScope && restoresScope && resolvesLastTurnPath && preservesLastTurnSelection && renderedScroll && noScopeInference
 console.log(`${correct ? 'PASS' : 'FAIL'}  comment links restore their explicit review scope and scroll after the diff renders`)
 process.exitCode = correct ? 0 : 1

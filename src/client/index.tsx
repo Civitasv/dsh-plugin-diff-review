@@ -47,7 +47,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { ApplyHunkResponse, ApplyResponse, CommentsResponse, CommitDiffResponse, CommitInfo, DiffFile, DiffHunk, FileReadResponse, FilesListResponse, FileWriteResponse, GitResponse, HistoryResponse, PrResponse, ReposResponse, ReviewComment, ReviewFinding, ReviewResponse, StatusResponse, WorkspaceFileEntry } from '../shared/types.ts'
+import type { ApplyHunkResponse, ApplyResponse, CommentsResponse, CommitDiffResponse, CommitInfo, DiffFile, DiffHunk, FileReadResponse, FilesListResponse, FileWriteResponse, GitResponse, HistoryResponse, PrResponse, ReposResponse, ReviewComment, ReviewCommentScope, ReviewFinding, ReviewResponse, StatusResponse, WorkspaceFileEntry } from '../shared/types.ts'
 import { filesWorkspacePath } from './files-path.ts'
 import { parseReviewPackage, isReviewPackageText } from './review-package.ts'
 import type { ReviewPackage, ReviewPackageComment, ReviewPackageFinding } from './review-package.ts'
@@ -78,7 +78,7 @@ const OPEN_EDITOR_URL = 'open-editor/open'
 const STYLE_TAG = 'dsh-plugin-diff-review/review.css'
 
 /** Open state shared between the header trigger (session scope) and the overlay (root scope). */
-const overlayStore = createSnapshotStore<{ open: boolean; cwd: string | null; key: number; presentation: 'dock' | 'modal'; focus?: { path: string; line?: number; round?: number; tab?: 'session' | 'workspace' } | null }>({
+const overlayStore = createSnapshotStore<{ open: boolean; cwd: string | null; key: number; presentation: 'dock' | 'modal'; focus?: { path: string; line?: number; round?: number; tab?: 'session' | 'workspace'; scope?: ReviewCommentScope } | null }>({
   open: false,
   cwd: null,
   key: 0,
@@ -197,6 +197,15 @@ const SCOPE_OPTIONS: { id: WorkspaceScope; label: keyof typeof zh }[] = [
 /** Browser-side absolute path check (no node:path in the client bundle). */
 function isAbsPath(p: string): boolean {
   return p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p)
+}
+
+/** Normalize a session-diff path to the repo-relative form used by comments. */
+function repoRelativePath(path: string, cwd: string | null | undefined): string {
+  if (!cwd || !isAbsPath(path)) return path
+  if (path === cwd) return ''
+  return path.startsWith(`${cwd}/`) || path.startsWith(`${cwd}\\`)
+    ? path.slice(cwd.length).replace(/^[\\/]+/, '')
+    : path
 }
 
 /** Largest of three numbers (prefers b on ties). */
@@ -1705,6 +1714,7 @@ function CommentBox({ comment, busy, onUpdate, onDelete, t }: { comment: ReviewC
       d.focus = {
         path: comment.path,
         line: comment.lineNew ?? comment.lineOld ?? undefined,
+        scope: comment.scope,
         tab: comment.source === 'session' ? 'session' : 'workspace',
       }
       d.key = d.key + 1
@@ -3044,6 +3054,7 @@ function DiffReviewComposerDock({ sessionId, useSessions, sessions, inputActions
       d.focus = {
         path: comment.path,
         line: comment.lineNew ?? comment.lineOld ?? undefined,
+        scope: comment.scope,
         tab: comment.source === 'session' ? 'session' : 'workspace',
       }
       d.key = d.key + 1
@@ -3244,10 +3255,6 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   }, [reviewFileMenu])
   // Temporary line highlight (jump target from a PR comment or a finding).
   const [jumpLine, setJumpLine] = useState<number | null>(null)
-  // Workspace comment links arrive before the async git status response. Keep
-  // the target until its staged/unstaged layer is known.
-  const pendingWorkspaceFocus = useRef<{ path: string; line: number | undefined } | null>(null)
-
   /** Select a file and flash its line (findings / PR comments). */
   const jumpTo = (file: string, line?: number) => {
     setSelected(file)
@@ -3360,7 +3367,10 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
         if (first && first.path !== cwd) setRepoPath(first.path)
       }
       if (next.error && !next.isRepo) setError(next.error)
-      setSelected((prev) => (prev && next.files.some((f) => f.path === prev) ? prev : next.files[0]?.path ?? null))
+      // Last Turn uses session-diff paths (often absolute), so a status reload
+      // must not discard its selected entry merely because it is absent from
+      // git status's repo-relative file list.
+      setSelected((prev) => (prev && (next.files.some((file) => file.path === prev) || lastTurnFiles.some((file) => file.path === prev)) ? prev : next.files[0]?.path ?? null))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -3412,12 +3422,17 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   useEffect(() => {
     const focus = storeState.focus
     if (!storeState.open || !cwd || !focus) return
-    if (focus.tab === 'session') {
+    const commentScope = focus.scope ?? (focus.tab === 'session' ? 'last-turn' : 'unstaged')
+    if (commentScope === 'last-turn') {
       // Reply cards always open the same Last Turn view; it is intentionally
       // independent from the active Git repository selection.
       setTab('workspace')
       setScope('last-turn')
-      setSelected(focus.path)
+      // Session diffs retain host-provided absolute paths, while comments are
+      // stored repo-relative. Resolve the persisted comment path back to the
+      // exact Last Turn tree entry before selecting it.
+      const lastTurnPath = lastTurnFiles.find((file) => file.path === focus.path || repoRelativePath(file.path, activeCwd) === focus.path)?.path ?? focus.path
+      setSelected(lastTurnPath)
       setJumpLine(focus.line ?? null)
       const scrollTimer = setTimeout(() => {
         if (focus.line != null) {
@@ -3431,31 +3446,15 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       }
     }
     setTab('workspace')
-    // Leave Last turn immediately so the workspace diff can render while the
-    // status response resolves the target's exact layer below.
-    setScope('unstaged')
+    setScope(commentScope)
     setSelected(focus.path)
     setJumpLine(focus.line ?? null)
-    pendingWorkspaceFocus.current = { path: focus.path, line: focus.line }
     const clearTimer = setTimeout(() => setJumpLine(null), 2500)
     return () => {
       clearTimeout(clearTimer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeState.key])
-
-  // Once git status is available, switch to the target file's layer. A file
-  // with both layers is present in either list; preferring staged keeps the
-  // staged comment's context visible.
-  useEffect(() => {
-    const pending = pendingWorkspaceFocus.current
-    if (!pending || !status?.isRepo) return
-    const target = status?.files.find((file) => file.path === pending.path)
-    if (!target) return
-    setScope(target.staged ? 'staged' : 'unstaged')
-    setSelected(target.path)
-    pendingWorkspaceFocus.current = null
-  }, [status])
 
   // Scroll only after React has rendered the selected diff. Retry briefly for
   // a scope switch or a large diff whose rows mount a moment later.
@@ -3741,9 +3740,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
    * carry whatever path the agent passed (usually absolute).
    */
   const relativePath = (p: string): string => {
-    if (!activeCwd || !isAbsPath(p)) return p
-    if (p.startsWith(activeCwd)) return p.slice(activeCwd.length).replace(/^[\\/]+/, '')
-    return p
+    return repoRelativePath(p, activeCwd)
   }
 
   const saveComment = async () => {
@@ -3751,6 +3748,13 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     if (!commentPath || !commentEditor || busy) return
     const text = commentText.trim()
     if (!text) return
+    const commentScope: ReviewCommentScope = tab === 'session' || scope === 'last-turn'
+      ? 'last-turn'
+      : scope === 'staged'
+        ? 'staged'
+        : scope === 'branch'
+          ? 'branch'
+          : 'unstaged'
     const comment: ReviewComment = {
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       path: commentPath,
@@ -3758,7 +3762,8 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       lineOld: commentEditor.oldLine,
       text,
       createdAt: new Date().toISOString(),
-      source: tab === 'session' ? 'session' : 'workspace',
+      scope: commentScope,
+      source: commentScope === 'last-turn' ? 'session' : 'workspace',
     }
     setBusy(true)
     try {
