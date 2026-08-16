@@ -15,7 +15,7 @@ dsh plugin --profile web add github:Civitasv/dsh-plugin-open-editor#main
 dsh plugin --profile web add github:Civitasv/dsh-plugin-diff-review#v0.1.2
 ```
 
-并在 `~/.dsh/profiles/web/cordis.patch.yml` 启用它们：
+上面两条 `dsh plugin add` 命令负责安装包，但 DSH 只会加载在 web profile 的补丁文件中注册的插件，因此还需在 `~/.dsh/profiles/web/cordis.patch.yml` 中列出它们：
 
 ```yaml
 - insert:
@@ -58,6 +58,10 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 在文件树中选择文件，或从 Review 打开文件，会创建可关闭的文件页签。文本文件可直接编辑并自动保存；支持图片预览与常见代码/文档格式的高亮显示。
 
 ![文件预览](docs/screenshots/showcase3.png)
+
+## 引用助手回复到对话
+
+在 DeepSeek 助手回复中选中一段文字，会浮出 **添加到对话** 按钮；点击即可将该内容追加到当前会话输入框，方便继续追问。
 
 ## 处理与提交
 

@@ -15,7 +15,7 @@ dsh plugin --profile web add github:Civitasv/dsh-plugin-open-editor#main
 dsh plugin --profile web add github:Civitasv/dsh-plugin-diff-review#v0.1.2
 ```
 
-Then enable them in `~/.dsh/profiles/web/cordis.patch.yml`:
+The two `dsh plugin add` commands above install the packages, but DSH only loads plugins that are registered in the web profile's patch file — so list them in `~/.dsh/profiles/web/cordis.patch.yml`:
 
 ```yaml
 - insert:
@@ -58,6 +58,10 @@ The file tree is searchable, lets you expand directories, drag to resize its wid
 Selecting a file in the tree, or opening one from Review, creates a closeable tab. Text files can be edited directly and are saved automatically; image preview and syntax highlighting for common code and document formats are supported.
 
 ![File preview](docs/screenshots/showcase3.png)
+
+## Quoting an assistant reply
+
+Select text in a DeepSeek assistant reply — an **Add to conversation** button floats up. Click it to append the selection to the current session's input for a follow-up question.
 
 ## Staging and committing
 

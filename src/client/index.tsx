@@ -19,7 +19,7 @@
  * current session is read reactively through `ctx.sessions` (injected via the
  * overlay registration's inject face).
  */
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, Fragment } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, Fragment, memo } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactElement, ReactNode } from 'react'
 import { diffLines } from 'diff'
 import { gitRowsWithLines } from './unified-rows.ts'
@@ -1026,6 +1026,8 @@ const REVIEW_CSS = `
 .dsdr-files-actions{display:flex;align-items:center;gap:6px;padding:8px 10px;border-top:1px solid var(--dsw-alias-border-l1)}
 .dsdr-files-item:hover{position:relative;background:transparent}.dsdr-files-item:hover::before{content:"";position:absolute;z-index:0;inset:-5px 0;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);pointer-events:none}
 .dsdr-files-menu{min-width:196px;border-radius:12px}.dsdr-files-menu button{display:flex;align-items:center;gap:9px;border-radius:7px;padding:8px 10px;font:13px/18px var(--dsw-font-sans)}.dsdr-files-menu-icon{display:inline-grid;place-items:center;width:17px;color:var(--dsw-alias-label-tertiary);font:14px/1 var(--dsw-font-sans)}
+/* --- Codex-style quote popup (file editor selection → Add to conversation) --- */
+.dsdr-quote-pop{position:fixed;z-index:120;display:flex;padding:5px;border:1px solid var(--dsw-alias-border-l2);border-radius:14px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-quote-pop button{display:flex;align-items:center;gap:10px;border:0;border-radius:10px;background:transparent;color:var(--dsw-alias-label-primary);padding:9px 14px;font:16px/22px var(--dsw-font-sans);cursor:pointer}.dsdr-quote-pop button:hover{background:var(--dsw-alias-interactive-bg-hover)}
 /* --- fallback user bubble (native look) --- */
 .dsdr-fallback-user{flex-direction:column;align-items:flex-end;gap:6px;display:flex}
 .dsdr-fallback-user-stack{flex-direction:column;align-items:flex-end;gap:8px;min-width:0;max-width:min(525px,82%);display:flex}
@@ -1185,6 +1187,7 @@ const zh = {
   'files.loading': '正在读取…',
   'files.openEditor': '在编辑器中打开',
   'files.empty': '没有匹配文件',
+  'quote.add': '添加到对话',
   // fallback.*: labels of the built-in image fallback viewer (FallbackUserBubble),
   // used when a plain user message carries images.
   'fallback.image': '图片',
@@ -1344,6 +1347,7 @@ const en: Record<keyof typeof zh, string> = {
   'files.loading': 'Loading…',
   'files.openEditor': 'Open in editor',
   'files.empty': 'No matching files',
+  'quote.add': 'Add to conversation',
   // fallback.*: labels of the built-in image fallback viewer (FallbackUserBubble),
   // used when a plain user message carries images.
   'fallback.image': 'Image',
@@ -2562,6 +2566,20 @@ function buildFileTree<T>(items: readonly T[], pathOf: (item: T) => string): Tre
 }
 
 /**
+ * Session snapshots change for every streamed token. Preserve a tree's node
+ * identity while its file paths stay the same so react-arborist does not
+ * recycle hovered rows on each snapshot update.
+ */
+function usePathStableTree<T>(items: readonly T[], pathOf: (item: T) => string): TreeNode<T>[] {
+  const cache = useRef<{ signature: string; tree: TreeNode<T>[] } | null>(null)
+  const signature = items.map(pathOf).sort().join('\n')
+  if (!cache.current || cache.current.signature !== signature) {
+    cache.current = { signature, tree: buildFileTree(items, pathOf) }
+  }
+  return cache.current.tree
+}
+
+/**
  * Virtualized tree renderer. react-arborist owns keyboard navigation and
  * scroll bookkeeping; the surrounding review code remains the source of
  * truth for directory collapse state and file actions.
@@ -2657,6 +2675,15 @@ function FileTreeView<T>(props: {
     </div>
   )
 }
+
+/** Avoid resetting react-arborist rows during unrelated streaming updates. */
+const StableFileTreeView = memo(FileTreeView, (prev, next) => (
+  prev.nodes === next.nodes &&
+  prev.collapsed === next.collapsed &&
+  prev.onToggleDir === next.onToggleDir &&
+  prev.fillHeight === next.fillHeight &&
+  prev.activePath === next.activePath
+)) as typeof FileTreeView
 
 // ---------------------------------------------------------------------------
 // Conversation card (session scope): the carried review package renders in the
@@ -3575,7 +3602,8 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   // NOTE: hooks must all run before the early return below (React hook order).
   const stagedTree = useMemo(() => buildFileTree(stagedFiles, (f) => f.path), [stagedFiles])
   const unstagedTree = useMemo(() => buildFileTree(unstagedFiles, (f) => f.path), [unstagedFiles])
-  const scopeTree = useMemo(() => buildFileTree(scopeFiles, (f) => f.path), [scopeFiles])
+  const lastTurnTree = usePathStableTree(lastTurnFiles, (file) => file.path)
+  const scopeTree = useMemo(() => scope === 'last-turn' ? lastTurnTree : buildFileTree(scopeFiles, (f) => f.path), [scope, scopeFiles, lastTurnTree])
   const commitFilesTree = useMemo(
     () => (commitDiff?.ok ? buildFileTree(commitDiff.files, (f) => f.path) : []),
     [commitDiff],
@@ -3636,7 +3664,6 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       draft.key = draft.key + 1
     })
   }
-
   /** Leaf row shared by the staged/unstaged file trees. */
   const workspaceLeaf = ({ item: file, name }: { item: DiffFile; name: string }) => (
     <button
@@ -4472,12 +4499,13 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                       {t('scope.branch')} {baseBranch ? `↔ ${baseBranch}` : ''} ({scopeFiles.length})
                     </div>
                     <div className="dsdr-nodiff">{t('scope.branchReadonly')}</div>
-                    <FileTreeView
+                    <StableFileTreeView
                       nodes={scopeTree}
                       collapsed={collapsedDirs}
                       onToggleDir={toggleDir}
                       depth={0}
                       renderLeaf={workspaceLeaf}
+                      activePath={selected}
                     />
                   </>
                 ) : (
@@ -4488,12 +4516,13 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                 scopeFiles.length > 0 ? (
                   <>
                     <div className="dsdr-section">{t('scope.last-turn')} ({scopeFiles.length})</div>
-                    <FileTreeView
+                    <StableFileTreeView
                       nodes={scopeTree}
                       collapsed={collapsedDirs}
                       onToggleDir={toggleDir}
                       depth={0}
                       renderLeaf={workspaceLeaf}
+                      activePath={selected}
                     />
                   </>
                 ) : (
@@ -4875,6 +4904,82 @@ function DiffReviewConfigCard({ t }: { t: (key: keyof typeof zh, params?: Record
 }
 
 /** Client plugin body. */
+/** Install a page-level selection affordance without relying on a dock slot. */
+function installAssistantQuoteAction(ctx: ClientContext): () => void {
+  if (typeof document === 'undefined') return () => {}
+  let popup: HTMLDivElement | null = null
+  let selectedText = ''
+  let frame = 0
+  const dismiss = () => {
+    popup?.remove()
+    popup = null
+    selectedText = ''
+  }
+  const addToComposer = () => {
+    const sessionId = ctx.sessions.list.getSnapshot().current
+    if (!sessionId || !selectedText) return
+    const text = selectedText
+    composerDraftStore.update((draft) => {
+      draft.sessionId = sessionId
+      draft.text = `> ${text}`
+      draft.key = draft.key + 1
+    })
+    window.getSelection()?.removeAllRanges()
+    dismiss()
+  }
+  const update = () => {
+    frame = 0
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return dismiss()
+    const text = selection.toString().trim()
+    const anchor = selection.getRangeAt(0).commonAncestorContainer
+    const element = anchor instanceof Element ? anchor : anchor.parentElement
+    const row = element?.closest<HTMLElement>('[data-chat-flow-kind]')
+    // DeepSeek streams use more than one non-user row kind. Any conversation
+    // output is quotable; only human and steering messages are excluded.
+    const assistant = element?.closest('[data-conversation-scroll]')
+      && row?.dataset.chatFlowKind !== 'user' && row?.dataset.chatFlowKind !== 'steering'
+      ? element
+      : null
+    if (!text || !assistant || element?.closest('.dsdr-quote-pop, input, textarea')) return dismiss()
+    const rect = selection.getRangeAt(0).getBoundingClientRect()
+    if (rect.width === 0 && rect.height === 0) return dismiss()
+    selectedText = text
+    if (!popup) {
+      popup = document.createElement('div')
+      popup.className = 'dsdr-quote-pop'
+      popup.setAttribute('role', 'menu')
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.setAttribute('role', 'menuitem')
+      button.textContent = `＋ ${document.documentElement.lang.startsWith('zh') ? '添加到对话' : 'Add to conversation'}`
+      button.addEventListener('pointerdown', (event) => event.preventDefault())
+      button.addEventListener('click', addToComposer)
+      popup.append(button)
+      document.body.append(popup)
+    }
+    popup.style.left = `${Math.max(8, Math.min(rect.right - 64, window.innerWidth - 260))}px`
+    popup.style.top = `${Math.min(rect.bottom + 8, window.innerHeight - 56)}px`
+  }
+  const schedule = () => {
+    if (!frame) frame = requestAnimationFrame(update)
+  }
+  const outside = (event: PointerEvent) => {
+    if (popup && event.target instanceof Node && popup.contains(event.target)) return
+    dismiss()
+  }
+  document.addEventListener('selectionchange', schedule)
+  document.addEventListener('pointerup', schedule)
+  document.addEventListener('pointerdown', outside)
+  return () => {
+    if (frame) cancelAnimationFrame(frame)
+    document.removeEventListener('selectionchange', schedule)
+    document.removeEventListener('pointerup', schedule)
+    document.removeEventListener('pointerdown', outside)
+    dismiss()
+  }
+}
+
 export function apply(ctx: ClientContext): void {
   const syncEditorTheme = () => {
     const colorScheme = ctx.theme.getTheme().active.colorScheme
@@ -4883,6 +4988,7 @@ export function apply(ctx: ClientContext): void {
   syncEditorTheme()
   ctx.on('theme/change', syncEditorTheme)
   ctx.effect(() => ctx.locale.register(LOCALE_NS, { zh, en }), 'diff-review: locale dictionary')
+  ctx.effect(() => installAssistantQuoteAction(ctx), 'diff-review: assistant quote selection')
   ctx.slots.inject('conversation.session.header.actions', () =>
     ctx.slots.register(
       {
