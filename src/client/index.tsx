@@ -1121,7 +1121,7 @@ const zh = {
   'scope.commit': '提交',
   'scope.branch': '分支',
   'scope.last-turn': '最后一轮',
-  'review.lastTurnEmpty': '最后一轮没有记录到文件修改 —— 终端命令（bash）改文件不会计入会话记录；可切到「全部」查看 git 变更',
+  'review.lastTurnEmpty': '最后一轮没有记录到文件修改 —— 终端命令（bash）改文件不会计入会话记录；可切到「未暂存」或「已暂存」查看 git 变更',
   'scope.base': '基线分支',
   'scope.branchReadonly': '分支范围只读（对比 merge-base，不提供采纳/丢弃）',
   'review.selectCommit': '请选择提交 revision',
@@ -1276,7 +1276,7 @@ const en: Record<keyof typeof zh, string> = {
   'scope.commit': 'Commit',
   'scope.branch': 'Branch',
   'scope.last-turn': 'Last turn',
-  'review.lastTurnEmpty': 'No file changes recorded for the last turn — terminal commands (bash) that edit files are not tracked in the session log; switch to "All" to see git changes',
+  'review.lastTurnEmpty': 'No file changes recorded for the last turn — terminal commands (bash) that edit files are not tracked in the session log; switch to "Unstaged" or "Staged" to see git changes',
   'scope.base': 'Base branch',
   'scope.branchReadonly': 'Branch scope is read-only (merge-base diff; no accept/revert)',
   'review.selectCommit': 'Select a committed revision',
@@ -3536,8 +3536,13 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
     setSelected(item.path)
   }
   const collapseAllDiffs = () => setCollapsedReviewFiles(new Set(scopeFiles.map((file) => file.path)))
-  const totalAdded = files.reduce((n, f) => n + f.added, 0)
-  const totalDeleted = files.reduce((n, f) => n + f.deleted, 0)
+  // The toolbar follows the current scope rather than always describing the
+  // working tree. This keeps Last turn empty at 0+/0- even when git has
+  // unrelated changes, and lets Commit use its own server-side statistics.
+  const scopeAdded = scopeFiles.reduce((n, f) => n + f.added, 0)
+  const scopeDeleted = scopeFiles.reduce((n, f) => n + f.deleted, 0)
+  const subtitleAdded = scope === 'commit' && selectedCommit && commitDiff?.ok ? commitDiff.added : scopeAdded
+  const subtitleDeleted = scope === 'commit' && selectedCommit && commitDiff?.ok ? commitDiff.deleted : scopeDeleted
 
   // Commit-detail view: the selected file within the selected commit.
   const commitSegments = commitDiff?.ok ? splitCommitDiff(commitDiff.diff) : []
@@ -3584,10 +3589,10 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       <span className="dsdr-file-stat">
         {file.binary ? t('review.binary') : t('review.changes', { added: file.added, deleted: file.deleted })}
       </span>
-      <span className="dsdr-file-actions">
-        <button type="button" className="dsdr-file-icon" title={t('hunk.stage')} disabled={busy} onClick={(event) => { event.stopPropagation(); void runApply('accept', file.path) }}>+</button>
-        <button type="button" className="dsdr-file-icon dsdr-file-icon-danger" title={t('hunk.revert')} disabled={busy} onClick={(event) => { event.stopPropagation(); void runApply('revert', file.path) }}>↶</button>
-      </span>
+      {allowActions ? <span className="dsdr-file-actions">
+        {file.staged ? <button type="button" className="dsdr-file-icon" title={t('hunk.unstage')} disabled={busy} onClick={(event) => { event.stopPropagation(); void runApply('unstage', file.path) }}>−</button> : <button type="button" className="dsdr-file-icon" title={t('hunk.stage')} disabled={busy} onClick={(event) => { event.stopPropagation(); void runApply('accept', file.path) }}>+</button>}
+        {!file.staged ? <button type="button" className="dsdr-file-icon dsdr-file-icon-danger" title={t('hunk.revert')} disabled={busy} onClick={(event) => { event.stopPropagation(); void runApply('revert', file.path) }}>↶</button> : null}
+      </span> : null}
     </button>
   )
 
@@ -4084,7 +4089,7 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
               {tab === 'session'
                 ? t('review.sessionStats', { rounds: rounds.length, files: totalSessionFiles })
                 : status?.isRepo
-                  ? `${status.branch ?? t('review.detached')} · ${t('review.changes', { added: totalAdded, deleted: totalDeleted })}${status.ahead > 0 ? ` · ${t('review.ahead', { n: status.ahead })}` : ''}${status.behind > 0 ? ` · ${t('review.behind', { n: status.behind })}` : ''}`
+                  ? `${status.branch ?? t('review.detached')} · ${t('review.changes', { added: subtitleAdded, deleted: subtitleDeleted })}${status.ahead > 0 ? ` · ${t('review.ahead', { n: status.ahead })}` : ''}${status.behind > 0 ? ` · ${t('review.behind', { n: status.behind })}` : ''}`
                   : t('review.notRepo')}
             </span>
             <span className="dsdr-spacer" />

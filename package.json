@@ -53,6 +53,8 @@
     "test:diff-line-layout": "node scripts/diff-line-layout-test.mjs",
     "test:unified-line-numbers": "node scripts/unified-line-numbers-test.mjs",
     "test:split-diff-layout": "node scripts/split-diff-layout-test.mjs",
+    "test:commit-scope-stats": "node scripts/commit-scope-stats-test.mjs",
+    "test:readonly-scope-actions": "node scripts/readonly-scope-actions-test.mjs",
     "test:ui": "node scripts/ui-smoke-test.mjs"
   },
   "dependencies": {
