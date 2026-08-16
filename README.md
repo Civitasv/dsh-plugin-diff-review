@@ -1,4 +1,4 @@
-# dsh-plugin-diff-review
+# Codex-style diff review inside DeepSeek Harness
 
 在 DSH 中查看、处理和评审当前工作区改动。点击会话页头的 **变动** 即可打开右侧评审工作台。
 
