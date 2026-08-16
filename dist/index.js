@@ -599,7 +599,7 @@ async function commentsFile(cwd) {
 function isCommentShape(v) {
   if (!v || typeof v !== "object") return false;
   const c = v;
-  return typeof c.id === "string" && typeof c.path === "string" && typeof c.text === "string" && (typeof c.lineNew === "number" || c.lineNew === null) && (typeof c.lineOld === "number" || c.lineOld === null) && typeof c.createdAt === "string";
+  return typeof c.id === "string" && typeof c.path === "string" && typeof c.text === "string" && (typeof c.lineNew === "number" || c.lineNew === null) && (typeof c.lineOld === "number" || c.lineOld === null) && typeof c.createdAt === "string" && (c.scope === void 0 || c.scope === "unstaged" || c.scope === "staged" || c.scope === "branch" || c.scope === "last-turn");
 }
 async function readComments(cwd) {
   const file = await commentsFile(cwd);
@@ -637,6 +637,9 @@ async function putCommentsAction(config, raw) {
     if (!valid(lineNew) || !valid(lineOld)) return { status: 400, body: { ok: false, comments: [], error: "invalid comment line anchor" } };
     if (lineNew === null && lineOld === null) return { status: 400, body: { ok: false, comments: [], error: "comment must anchor to a line" } };
     if (typeof c.createdAt !== "string" || c.createdAt.length > 64) return { status: 400, body: { ok: false, comments: [], error: "invalid comment createdAt" } };
+    if (c.scope !== void 0 && c.scope !== "unstaged" && c.scope !== "staged" && c.scope !== "branch" && c.scope !== "last-turn") {
+      return { status: 400, body: { ok: false, comments: [], error: "invalid comment scope" } };
+    }
   }
   const file = await commentsFile(cwd.path);
   if (!file) return { status: 400, body: { ok: false, comments: [], error: "not a git repository" } };

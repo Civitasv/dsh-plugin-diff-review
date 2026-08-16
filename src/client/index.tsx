@@ -3244,6 +3244,9 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
   }, [reviewFileMenu])
   // Temporary line highlight (jump target from a PR comment or a finding).
   const [jumpLine, setJumpLine] = useState<number | null>(null)
+  // Workspace comment links arrive before the async git status response. Keep
+  // the target until its staged/unstaged layer is known.
+  const pendingWorkspaceFocus = useRef<{ path: string; line: number | undefined } | null>(null)
 
   /** Select a file and flash its line (findings / PR comments). */
   const jumpTo = (file: string, line?: number) => {
@@ -3428,20 +3431,52 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
       }
     }
     setTab('workspace')
+    // Leave Last turn immediately so the workspace diff can render while the
+    // status response resolves the target's exact layer below.
+    setScope('unstaged')
     setSelected(focus.path)
     setJumpLine(focus.line ?? null)
-    const scrollTimer = setTimeout(() => {
-      if (focus.line != null) {
-        document.querySelector(`[data-dsdr-line="${focus.line}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-      }
-    }, 80)
+    pendingWorkspaceFocus.current = { path: focus.path, line: focus.line }
     const clearTimer = setTimeout(() => setJumpLine(null), 2500)
     return () => {
-      clearTimeout(scrollTimer)
       clearTimeout(clearTimer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeState.key])
+
+  // Once git status is available, switch to the target file's layer. A file
+  // with both layers is present in either list; preferring staged keeps the
+  // staged comment's context visible.
+  useEffect(() => {
+    const pending = pendingWorkspaceFocus.current
+    if (!pending || !status?.isRepo) return
+    const target = status?.files.find((file) => file.path === pending.path)
+    if (!target) return
+    setScope(target.staged ? 'staged' : 'unstaged')
+    setSelected(target.path)
+    pendingWorkspaceFocus.current = null
+  }, [status])
+
+  // Scroll only after React has rendered the selected diff. Retry briefly for
+  // a scope switch or a large diff whose rows mount a moment later.
+  useEffect(() => {
+    if (!storeState.open || jumpLine === null || selected === null) return
+    let attempt = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const scroll = () => {
+      const target = document.querySelector(`[data-dsdr-line="${jumpLine}"]`)
+      if (target) {
+        target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        return
+      }
+      attempt += 1
+      if (attempt < 4) timer = setTimeout(scroll, 80)
+    }
+    timer = setTimeout(scroll, 0)
+    return () => {
+      if (timer) clearTimeout(timer)
+    }
+  }, [storeState.open, jumpLine, selected, scope, view])
 
   // Keep staged/unstaged/history fresh while the workspace tab is open.
   useEffect(() => {

@@ -152,6 +152,9 @@ export interface CommitDiffResponse {
   error?: string
 }
 
+/** Review scope in which an inline comment was created. */
+export type ReviewCommentScope = 'unstaged' | 'staged' | 'branch' | 'last-turn'
+
 /** One inline comment anchored to a diff line of a workspace file. */
 export interface ReviewComment {
   /** Client-generated id (crypto.randomUUID). */
@@ -165,6 +168,11 @@ export interface ReviewComment {
   text: string
   /** ISO 8601 timestamp. */
   createdAt: string
+  /**
+   * Exact review scope to restore when the comment is opened. Absent on
+   * comments written by older versions.
+   */
+  scope?: ReviewCommentScope
   /**
    * Which review tab created it: 'session' comments anchor to the session
    * hunks' RELATIVE line counts (no real line numbers in the session log),

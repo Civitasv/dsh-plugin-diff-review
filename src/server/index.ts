@@ -874,7 +874,8 @@ function isCommentShape(v: unknown): v is ReviewComment {
     typeof c.text === 'string' &&
     (typeof c.lineNew === 'number' || c.lineNew === null) &&
     (typeof c.lineOld === 'number' || c.lineOld === null) &&
-    typeof c.createdAt === 'string'
+    typeof c.createdAt === 'string' &&
+    (c.scope === undefined || c.scope === 'unstaged' || c.scope === 'staged' || c.scope === 'branch' || c.scope === 'last-turn')
   )
 }
 
@@ -917,6 +918,9 @@ async function putCommentsAction(config: Config, raw: unknown): Promise<{ status
     if (!valid(lineNew) || !valid(lineOld)) return { status: 400, body: { ok: false, comments: [], error: 'invalid comment line anchor' } }
     if (lineNew === null && lineOld === null) return { status: 400, body: { ok: false, comments: [], error: 'comment must anchor to a line' } }
     if (typeof c.createdAt !== 'string' || c.createdAt.length > 64) return { status: 400, body: { ok: false, comments: [], error: 'invalid comment createdAt' } }
+    if (c.scope !== undefined && c.scope !== 'unstaged' && c.scope !== 'staged' && c.scope !== 'branch' && c.scope !== 'last-turn') {
+      return { status: 400, body: { ok: false, comments: [], error: 'invalid comment scope' } }
+    }
   }
 
   const file = await commentsFile(cwd.path)
