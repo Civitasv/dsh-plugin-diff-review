@@ -724,12 +724,12 @@ const REVIEW_CSS = `
 .dsdr-title{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary)}
 .dsdr-subtitle{color:var(--dsw-alias-label-tertiary);font-size:12px;font-family:var(--dsw-font-mono)}
 .dsdr-tabs{display:flex;align-items:center;gap:4px;margin-left:8px;min-width:0;overflow:auto}.dsdr-review-toolbar{display:flex;align-items:center;gap:10px;min-height:43px;padding:7px 16px;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);flex:none}
-.dsdr-review-tools{position:relative;display:inline-flex;align-items:center;gap:3px}.dsdr-jump-menu{position:absolute;z-index:20;right:0;top:calc(100% + 7px);display:flex;max-width:min(380px,calc(100vw - 40px));max-height:300px;overflow:auto;flex-direction:column;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-jump-menu button{min-width:210px;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-label-primary);padding:7px 9px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:11px/17px var(--dsw-font-mono);cursor:pointer}.dsdr-jump-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}.dsdr-jump-empty{padding:7px 9px;color:var(--dsw-alias-label-tertiary);font-size:12px}
+.dsdr-review-tools{position:relative;display:inline-flex;align-items:center;gap:5px}.dsdr-review-tool{min-height:26px;padding:3px 7px;gap:5px}.dsdr-review-tool svg{width:14px;height:14px}.dsdr-review-tool-label{font-size:11px}.dsdr-jump-menu{position:absolute;z-index:20;right:0;top:calc(100% + 7px);display:flex;max-width:min(380px,calc(100vw - 40px));max-height:300px;overflow:auto;flex-direction:column;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-jump-menu button{min-width:210px;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-label-primary);padding:7px 9px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:11px/17px var(--dsw-font-mono);cursor:pointer}.dsdr-jump-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}.dsdr-jump-empty{padding:7px 9px;color:var(--dsw-alias-label-tertiary);font-size:12px}
 .dsdr-tab{box-sizing:border-box;min-height:26px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;padding:2px 10px;font:inherit;font-size:12px;line-height:18px}
 .dsdr-tab:hover{color:var(--dsw-alias-label-secondary)}
 .dsdr-tab-active{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsdr-file-tab{display:inline-flex;align-items:center;gap:5px;max-width:180px;min-width:0;padding-right:5px}.dsdr-file-tab>span:not(.dsdr-file-tab-close){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsdr-file-tab .dsdr-tree-file-icon{width:15px;height:15px;font-size:8px}.dsdr-file-tab-close{display:inline-flex;align-items:center;justify-content:center;flex:none;width:16px;height:16px;border-radius:4px;color:var(--dsw-alias-label-tertiary)}.dsdr-file-tab-close:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dsdr-file-tab-close svg{width:11px;height:11px}
-.dsdr-new-tab{position:relative;display:inline-flex;flex:none}.dsdr-new-tab-btn{width:26px;height:26px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);font:16px/18px var(--dsw-font-sans);cursor:pointer}.dsdr-new-tab-btn:hover,.dsdr-new-tab-btn[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.dsdr-new-tab-menu{position:fixed;z-index:90;display:flex;min-width:142px;flex-direction:column;gap:2px;padding:5px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-new-tab-menu button{display:flex;align-items:center;gap:7px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);padding:6px 8px;font:12px/17px var(--dsw-font-sans);text-align:left;cursor:pointer}.dsdr-new-tab-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}.dsdr-files-browser-icon{color:var(--dsw-alias-label-secondary);font-size:13px}
+.dsdr-new-tab{position:relative;display:inline-flex;flex:none}.dsdr-new-tab-btn{width:26px;height:26px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);font:16px/18px var(--dsw-font-sans);cursor:pointer}.dsdr-new-tab-btn:hover,.dsdr-new-tab-btn[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.dsdr-new-tab-menu{position:fixed;z-index:90;display:flex;min-width:142px;flex-direction:column;gap:2px;padding:5px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3)}.dsdr-new-tab-menu button{display:flex;align-items:center;gap:7px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);padding:6px 8px;font:12px/17px var(--dsw-font-sans);text-align:left;cursor:pointer}.dsdr-new-tab-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}.dsdr-files-browser-icon{display:inline-flex;color:var(--dsw-alias-label-secondary)}.dsdr-files-browser-icon svg{width:14px;height:14px}
 .dsdr-scope{display:inline-flex;align-items:center;gap:6px;margin-left:8px}
 .dsdr-scope .dsdr-sel-trigger{min-width:110px;height:26px;font-size:12px;line-height:18px;padding:0 8px;background:var(--dsw-alias-bg-layer-2)}
 .dsdr-spacer{flex:1}
@@ -1122,6 +1122,10 @@ const zh = {
   'scope.branch': '分支',
   'scope.last-turn': '最后一轮',
   'review.lastTurnEmpty': '最后一轮没有记录到文件修改 —— 终端命令（bash）改文件不会计入会话记录；可切到「未暂存」或「已暂存」查看 git 变更',
+  'tool.files': '文件树',
+  'tool.hideFiles': '隐藏文件树',
+  'tool.collapse': '折叠 diff',
+  'tool.jump': '跳转文件',
   'scope.base': '基线分支',
   'scope.branchReadonly': '分支范围只读（对比 merge-base，不提供采纳/丢弃）',
   'review.selectCommit': '请选择提交 revision',
@@ -1277,6 +1281,10 @@ const en: Record<keyof typeof zh, string> = {
   'scope.branch': 'Branch',
   'scope.last-turn': 'Last turn',
   'review.lastTurnEmpty': 'No file changes recorded for the last turn — terminal commands (bash) that edit files are not tracked in the session log; switch to "Unstaged" or "Staged" to see git changes',
+  'tool.files': 'Files',
+  'tool.hideFiles': 'Hide files',
+  'tool.collapse': 'Collapse diffs',
+  'tool.jump': 'Jump to file',
   'scope.base': 'Base branch',
   'scope.branchReadonly': 'Branch scope is read-only (merge-base diff; no accept/revert)',
   'review.selectCommit': 'Select a committed revision',
@@ -1394,6 +1402,36 @@ function IconCheck() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}
+
+function IconFileTree() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M9 3v18" />
+      <path d="M13 8h4M13 12h4M13 16h3" />
+    </svg>
+  )
+}
+
+function IconCollapseDiffs() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m7 15 5 5 5-5" />
+      <path d="m7 9 5-5 5 5" />
+      <path d="M12 4v16" />
+    </svg>
+  )
+}
+
+function IconJumpToFile() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="6" />
+      <path d="m16 16 4 4" />
+      <path d="M11 8v6M8 11h6" />
     </svg>
   )
 }
@@ -2417,7 +2455,7 @@ function FilesWorkspace({ cwd, t, collapsed, onToggleDir, target, onActivateFile
         </div>
         <FileTreeResizeHandle width={treeWidth} onResize={onTreeWidthChange} reverse={docked} overlay />
         <div className="dsdr-files-editor">
-          <div className="dsdr-files-path">{selected ? <><FileTreeGlyph path={selected} /><span className="dsdr-files-path-text" title={selected}>{selected}</span></> : <span>{loading ? t('files.loading') : t('files.title')}</span>}<span className="dsdr-files-path-spacer" /><button type="button" className="dsdr-btn" title={t('files.openEditor')} onClick={() => void openSelectedInEditor(selected ?? cwd)}><span aria-hidden="true">↗</span>{t('files.openEditor')}</button><button type="button" className="dsdr-file-icon" title={treeVisible ? 'Hide file tree' : 'Show file tree'} aria-label={treeVisible ? 'Hide file tree' : 'Show file tree'} onClick={onToggleTree}>▥</button></div>
+          <div className="dsdr-files-path">{selected ? <><FileTreeGlyph path={selected} /><span className="dsdr-files-path-text" title={selected}>{selected}</span></> : <span>{loading ? t('files.loading') : t('files.title')}</span>}<span className="dsdr-files-path-spacer" /><button type="button" className="dsdr-btn" title={t('files.openEditor')} onClick={() => void openSelectedInEditor(selected ?? cwd)}><span aria-hidden="true">↗</span>{t('files.openEditor')}</button><button type="button" className="dsdr-btn dsdr-review-tool" title={t(treeVisible ? 'tool.hideFiles' : 'tool.files')} aria-label={t(treeVisible ? 'tool.hideFiles' : 'tool.files')} onClick={onToggleTree}><IconFileTree /><span className="dsdr-review-tool-label">{t('tool.files')}</span></button></div>
           {selected && fileKind === 'text' ? (
             <div className="dsdr-code-editor">
               <CodeEditor path={selected} value={content} onChange={setContent} />
@@ -4050,12 +4088,12 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
             <button type="button" role="tab" aria-selected={surface === 'review'} className={`dsdr-tab dsdr-review-tab${surface === 'review' ? ' dsdr-tab-active' : ''}`} onClick={() => setSurface('review')}>{t('review.title')}</button>
             {openFileTabs.map((path) => (
               <button key={path} type="button" role="tab" aria-selected={surface === path} className={`dsdr-tab dsdr-file-tab${surface === path ? ' dsdr-tab-active' : ''}`} onClick={() => { setSurface(path); setFilesTarget(path === FILES_BROWSER_TAB ? null : path) }} title={path === FILES_BROWSER_TAB ? t('files.title') : path}>
-                {path === FILES_BROWSER_TAB ? <span className="dsdr-files-browser-icon" aria-hidden="true">▱</span> : <FileTreeGlyph path={path} />}<span>{path === FILES_BROWSER_TAB ? t('files.title') : baseName(path)}</span><span role="button" className="dsdr-file-tab-close" aria-label={`Close ${path === FILES_BROWSER_TAB ? t('files.title') : baseName(path)}`} onClick={(event) => { event.stopPropagation(); closeFilesTab(path) }}><IconX /></span>
+                {path === FILES_BROWSER_TAB ? <span className="dsdr-files-browser-icon" aria-hidden="true"><IconFileTree /></span> : <FileTreeGlyph path={path} />}<span>{path === FILES_BROWSER_TAB ? t('files.title') : baseName(path)}</span><span role="button" className="dsdr-file-tab-close" aria-label={`Close ${path === FILES_BROWSER_TAB ? t('files.title') : baseName(path)}`} onClick={(event) => { event.stopPropagation(); closeFilesTab(path) }}><IconX /></span>
               </button>
             ))}
             <span ref={newTabMenuRef} className="dsdr-new-tab">
               <button type="button" className="dsdr-new-tab-btn" title="Open Files" aria-label="Open Files" aria-expanded={newTabMenu !== null} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setNewTabMenu((menu) => menu ? null : { x: rect.left, y: rect.bottom + 6 }) }}>+</button>
-              {newTabMenu ? <div className="dsdr-new-tab-menu" role="menu" style={{ left: newTabMenu.x, top: newTabMenu.y }}><button type="button" role="menuitem" onClick={openFilesBrowser}><span className="dsdr-files-browser-icon" aria-hidden="true">▱</span>{t('files.title')}</button></div> : null}
+              {newTabMenu ? <div className="dsdr-new-tab-menu" role="menu" style={{ left: newTabMenu.x, top: newTabMenu.y }}><button type="button" role="menuitem" onClick={openFilesBrowser}><span className="dsdr-files-browser-icon" aria-hidden="true"><IconFileTree /></span>{t('files.title')}</button></div> : null}
             </span>
           </div>
           <span className="dsdr-spacer" />
@@ -4093,11 +4131,11 @@ function DiffReviewOverlay({ sessions, t }: DiffReviewOverlayProps) {
                   : t('review.notRepo')}
             </span>
             <span className="dsdr-spacer" />
-            {tab === 'workspace' && allowActions ? <button type="button" className="dsdr-btn" disabled={busy || (files.length === 0 && stagedCount === 0)} onClick={() => setCommitOpen(true)}>{t('review.commit')}</button> : null}
+            {tab === 'workspace' ? <button type="button" className="dsdr-btn" disabled={busy || (files.length === 0 && stagedCount === 0)} onClick={() => setCommitOpen(true)}>{t('review.commit')}</button> : null}
             <span className="dsdr-review-tools">
-              <button type="button" className="dsdr-file-icon" title={fileTreeVisible ? 'Hide file tree' : 'Show file tree'} aria-label={fileTreeVisible ? 'Hide file tree' : 'Show file tree'} onClick={() => setFileTreeVisible((visible) => !visible)}>▥</button>
-              {tab === 'workspace' ? <button type="button" className="dsdr-file-icon" title="Collapse all diffs" aria-label="Collapse all diffs" onClick={collapseAllDiffs}>⇳</button> : null}
-              <button type="button" className="dsdr-file-icon" title="Jump to file" aria-label="Jump to file" onClick={() => setJumpOpen((open) => !open)}>⌕</button>
+              <button type="button" className="dsdr-btn dsdr-review-tool" title={t(fileTreeVisible ? 'tool.hideFiles' : 'tool.files')} aria-label={t(fileTreeVisible ? 'tool.hideFiles' : 'tool.files')} onClick={() => setFileTreeVisible((visible) => !visible)}><IconFileTree /><span className="dsdr-review-tool-label">{t('tool.files')}</span></button>
+              {tab === 'workspace' ? <button type="button" className="dsdr-btn dsdr-review-tool" title={t('tool.collapse')} aria-label={t('tool.collapse')} onClick={collapseAllDiffs}><IconCollapseDiffs /><span className="dsdr-review-tool-label">{t('tool.collapse')}</span></button> : null}
+              <button type="button" className="dsdr-btn dsdr-review-tool" title={t('tool.jump')} aria-label={t('tool.jump')} onClick={() => setJumpOpen((open) => !open)}><IconJumpToFile /><span className="dsdr-review-tool-label">{t('tool.jump')}</span></button>
               {jumpOpen ? <div className="dsdr-jump-menu" role="menu">
                 {jumpFiles.length === 0 ? <span className="dsdr-jump-empty">No files</span> : jumpFiles.map((item, index) => <button key={`${item.round ?? 'w'}:${item.path}:${index}`} type="button" role="menuitem" title={item.path} onClick={() => jumpToFile(item)}>{item.path}</button>)}
               </div> : null}

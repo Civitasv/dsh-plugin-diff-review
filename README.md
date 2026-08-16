@@ -6,29 +6,24 @@
 
 ## 安装
 
-### GitHub 安装
-
-安装稳定版本：
+本插件依赖 [dsh-plugin-open-editor](https://github.com/Civitasv/dsh-plugin-open-editor)，请一并安装：
 
 ```sh
+dsh plugin --profile web add github:Civitasv/dsh-plugin-open-editor#main
 dsh plugin --profile web add github:Civitasv/dsh-plugin-diff-review#v0.1.2
 ```
 
-想直接使用最新版本：
-
-```sh
-dsh plugin --profile web add github:Civitasv/dsh-plugin-diff-review#main
-```
-
-首次安装后，在 `~/.dsh/profiles/web/cordis.patch.yml` 添加：
+并在 `~/.dsh/profiles/web/cordis.patch.yml` 启用它们：
 
 ```yaml
 - insert:
+    - id: open-editor
+      name: dsh-plugin-open-editor
     - id: diff-review
       name: dsh-plugin-diff-review
 ```
 
-重启 DSH 后即可使用。更新时重新执行安装命令；使用稳定版本时替换为新的 tag。
+重启 DSH 后即可使用。更新时重新执行两条安装命令。
 
 ### 本地开发安装
 
@@ -40,7 +35,7 @@ bash install.sh
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-脚本适合本地开发，会将当前目录链接到 profile；安装后重启 DSH。
+脚本会安装并注册 `dsh-plugin-open-editor`，并将当前目录链接到 profile；安装后重启 DSH。
 
 ## 查看改动
 
@@ -80,7 +75,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 ## 常见问题
 
 - **最后一轮没有文件**：终端命令直接修改的文件不会进入会话记录；请切换到未暂存或已暂存范围查看 Git 改动。
-- **在编辑器中打开失败**：安装并启用 [dsh-plugin-open-editor](https://github.com/Civitasv/dsh-plugin-open-editor)，并确认目标编辑器可以从 PATH 启动。
+- **在编辑器中打开失败**：确认 `dsh-plugin-open-editor` 已安装并启用，并确认目标编辑器可以从 PATH 启动。
 
 ## License
 

@@ -11,6 +11,9 @@ set -euo pipefail
 
 NAME="dsh-plugin-diff-review"
 PLUGIN_ID="diff-review"
+OPEN_EDITOR_NAME="dsh-plugin-open-editor"
+OPEN_EDITOR_ID="open-editor"
+OPEN_EDITOR_SOURCE="github:Civitasv/dsh-plugin-open-editor#main"
 PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
 PROFILE_NM="$DSH_HOME/profiles/node_modules"
@@ -27,7 +30,15 @@ else
   echo "==> 依赖已存在，跳过 npm install"
 fi
 
-# 2. 链接进 profile 的扁平 node_modules
+# 2. 安装必装前置插件（提供“在编辑器中打开”能力）
+if ! command -v dsh >/dev/null 2>&1; then
+  echo "!! 未找到 dsh 命令，无法安装 $OPEN_EDITOR_NAME" >&2
+  exit 1
+fi
+echo "==> 安装必装前置插件：$OPEN_EDITOR_NAME"
+dsh plugin --profile web add "$OPEN_EDITOR_SOURCE"
+
+# 3. 链接进 profile 的扁平 node_modules
 mkdir -p "$PROFILE_NM"
 if [ -e "$PROFILE_NM/$NAME" ] && [ ! -L "$PROFILE_NM/$NAME" ]; then
   echo "!! $PROFILE_NM/$NAME 已存在且不是符号链接，请手动处理" >&2
@@ -36,20 +47,26 @@ fi
 ln -sfn "$PLUGIN_DIR" "$PROFILE_NM/$NAME"
 echo "==> 已链接: $PROFILE_NM/$NAME -> $PLUGIN_DIR"
 
-# 3. 注册到 cordis.patch.yml（幂等：已存在则跳过）
-if [ -f "$PATCH" ] && grep -q "name: $NAME" "$PATCH" 2>/dev/null; then
-  echo "==> $PATCH 已包含 $NAME，跳过注册"
-else
-  mkdir -p "$(dirname "$PATCH")"
+# 4. 注册到 cordis.patch.yml（幂等）
+mkdir -p "$(dirname "$PATCH")"
+ensure_plugin_registration() {
+  local id="$1"
+  local name="$2"
+  if [ -f "$PATCH" ] && grep -q "name: $name" "$PATCH" 2>/dev/null; then
+    echo "==> $PATCH 已包含 $name，跳过注册"
+    return
+  fi
   cat >> "$PATCH" <<EOF
 
-# $NAME (由 install.sh 添加)
+# $name (由 install.sh 添加)
 - insert:
-    - id: $PLUGIN_ID
-      name: $NAME
+    - id: $id
+      name: $name
 EOF
-  echo "==> 已注册到 $PATCH"
-fi
+  echo "==> 已注册到 $PATCH：$name"
+}
+ensure_plugin_registration "$OPEN_EDITOR_ID" "$OPEN_EDITOR_NAME"
+ensure_plugin_registration "$PLUGIN_ID" "$NAME"
 
 echo
 echo "==> 完成。请重启 dsh web："

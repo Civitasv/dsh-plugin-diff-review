@@ -8,6 +8,9 @@ $ErrorActionPreference = 'Stop'
 
 $Name = 'dsh-plugin-diff-review'
 $PluginId = 'diff-review'
+$OpenEditorName = 'dsh-plugin-open-editor'
+$OpenEditorId = 'open-editor'
+$OpenEditorSource = 'github:Civitasv/dsh-plugin-open-editor#main'
 $PluginDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $DshHome = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $HOME '.dsh' }
 $ProfileNm = Join-Path $DshHome 'profiles\node_modules'
@@ -25,7 +28,14 @@ if (-not (Test-Path (Join-Path $PluginDir 'node_modules'))) {
   Write-Host '==> 依赖已存在，跳过 npm install'
 }
 
-# 2. 链接进 profile 的扁平 node_modules（Junction 无需管理员权限）
+# 2. 安装必装前置插件（提供“在编辑器中打开”能力）
+if (-not (Get-Command dsh -ErrorAction SilentlyContinue)) {
+  throw "未找到 dsh 命令，无法安装 $OpenEditorName"
+}
+Write-Host "==> 安装必装前置插件：$OpenEditorName"
+dsh plugin --profile web add $OpenEditorSource
+
+# 3. 链接进 profile 的扁平 node_modules（Junction 无需管理员权限）
 New-Item -ItemType Directory -Force -Path $ProfileNm | Out-Null
 $Target = Join-Path $ProfileNm $Name
 if (Test-Path $Target) {
@@ -39,20 +49,24 @@ if (Test-Path $Target) {
 New-Item -ItemType Junction -Path $Target -Target $PluginDir | Out-Null
 Write-Host "==> 已链接: $Target -> $PluginDir"
 
-# 3. 注册到 cordis.patch.yml（幂等：已存在则跳过）
-if ((Test-Path $Patch) -and (Select-String -Path $Patch -Pattern "name: $Name" -Quiet)) {
-  Write-Host "==> $Patch 已包含 $Name，跳过注册"
-} else {
-  New-Item -ItemType Directory -Force -Path (Split-Path $Patch) | Out-Null
+# 4. 注册到 cordis.patch.yml（幂等）
+New-Item -ItemType Directory -Force -Path (Split-Path $Patch) | Out-Null
+function Ensure-PluginRegistration([string]$Id, [string]$PluginName) {
+  if ((Test-Path $Patch) -and (Select-String -Path $Patch -Pattern "name: $PluginName" -Quiet)) {
+    Write-Host "==> $Patch 已包含 $PluginName，跳过注册"
+    return
+  }
   @"
 
-# $Name (由 install.ps1 添加)
+# $PluginName (由 install.ps1 添加)
 - insert:
-    - id: $PluginId
-      name: $Name
+    - id: $Id
+      name: $PluginName
 "@ | Add-Content -Path $Patch -Encoding UTF8
-  Write-Host "==> 已注册到 $Patch"
+  Write-Host "==> 已注册到 $Patch：$PluginName"
 }
+Ensure-PluginRegistration $OpenEditorId $OpenEditorName
+Ensure-PluginRegistration $PluginId $Name
 
 Write-Host ''
 Write-Host '==> 完成。请重启 dsh web：'
