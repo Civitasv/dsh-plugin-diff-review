@@ -830,10 +830,10 @@ const REVIEW_CSS = `
 .dsdr-line-num{box-sizing:border-box;position:relative;min-height:calc(var(--dsdr-diff-size, 12px) + 6px);padding:0 8px 0 4px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);opacity:.82;font-variant-numeric:tabular-nums}
 .dsdr-line-num-new{border-right:1px solid color-mix(in srgb,var(--dsw-alias-border-l1) 75%,transparent)}
 .dsdr-line-text{min-width:0;padding-left:12px;white-space:pre}
-.dsdr-comment-add{position:absolute;left:0;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:16px;height:16px;border:0;border-radius:4px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:12px;line-height:1;padding:0;visibility:hidden}
+.dsdr-comment-add{position:absolute;left:0;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:22px;height:22px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-2);box-shadow:0 2px 7px rgba(0,0,0,.28);color:var(--dsw-alias-label-secondary);cursor:pointer;font-size:16px;font-weight:500;line-height:18px;padding:0;visibility:hidden}
 .dsdr-line:hover .dsdr-comment-add,.dsdr-comment-add:focus-visible{visibility:visible}
-.dsdr-comment-add:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsdr-comment-has{visibility:visible;background:color-mix(in srgb, var(--dsw-alias-button-info-fill) 16%, transparent);color:var(--dsw-alias-button-info-fill);font-variant-numeric:tabular-nums;font-size:10px}
+.dsdr-comment-add:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary)}
+.dsdr-comment-has{visibility:visible;background:color-mix(in srgb,var(--dsw-alias-button-info-fill) 22%,var(--dsw-alias-bg-layer-2));border-color:color-mix(in srgb,var(--dsw-alias-button-info-fill) 55%,var(--dsw-alias-border-l2));color:var(--dsw-alias-button-info-fill);font-variant-numeric:tabular-nums;font-size:10px}
 .dsdr-line-commented{box-shadow:inset 3px 0 0 color-mix(in srgb, var(--dsw-alias-button-info-fill) 70%, transparent)}
 .dsdr-comment-editor{display:flex;flex-direction:column;gap:6px;padding:8px 16px;border-top:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2)}
 .dsdr-comment-input{box-sizing:border-box;width:100%;min-height:52px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);padding:6px 8px;font:inherit;font-size:12px;line-height:18px;resize:vertical}
@@ -947,9 +947,7 @@ const REVIEW_CSS = `
 .dsdr-split-cell+.dsdr-split-cell{border-left:2px solid var(--dsw-alias-border-l1)}
 .dsdr-split-cell>.dsdr-comment-editor{box-sizing:border-box;flex:0 0 100%;min-width:0;padding:6px 8px}
 .dsdr-split-num{box-sizing:border-box;flex:none;width:42px;padding:0 8px 0 4px;text-align:right;color:var(--dsw-alias-label-tertiary);user-select:none;font-size:calc(var(--dsdr-diff-size, 12px) - 1px);line-height:calc(var(--dsdr-diff-size, 12px) + 6px);font-variant-numeric:tabular-nums;background:color-mix(in srgb,var(--dsw-alias-fill-l2) 38%,transparent)}
-.dsdr-split-cell .dsdr-comment-add{top:0;transform:translateY(1px);left:30px;right:auto;z-index:4;width:22px;height:22px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-2);box-shadow:0 2px 7px rgba(0,0,0,.28);color:var(--dsw-alias-label-secondary);font-size:16px;font-weight:500;line-height:18px}
-.dsdr-split-cell .dsdr-comment-add:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary)}
-.dsdr-split-cell .dsdr-comment-has{background:color-mix(in srgb,var(--dsw-alias-button-info-fill) 22%,var(--dsw-alias-bg-layer-2));border-color:color-mix(in srgb,var(--dsw-alias-button-info-fill) 55%,var(--dsw-alias-border-l2));color:var(--dsw-alias-button-info-fill);font-size:10px}
+.dsdr-split-cell .dsdr-comment-add{top:0;transform:translateY(1px);left:30px;right:auto;z-index:4}
 .dsdr-split-cell:has(.dsdr-comment-editor-draft) .dsdr-comment-add{display:none}
 .dsdr-split-text{flex:1;min-width:0;padding:0 8px}
 .dsdr-cell-finding{box-shadow:inset 0 0 0 1px var(--dsdr-finding-color, rgba(255,166,87,.7));background:rgba(255,166,87,.08)}
